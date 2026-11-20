@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   AgentName,
+  AgentTask,
   AgentTaskStatus,
   Incident,
   IncidentPriority,
@@ -13,14 +14,24 @@ import {
   EmergencyContact
 } from '@trinetra/shared';
 import { processIncidentLogic } from '../../../../supabase/functions/_shared/services/incidentProcessor';
-import { sendNotificationLogic } from '../../../../supabase/functions/_shared/services/notificationService';
+import {
+  sendNotificationLogic,
+  sweepNotificationRetriesLogic
+} from '../../../../supabase/functions/_shared/services/notificationService';
 import { OverpassHospitalClient } from '../../../../supabase/functions/_shared/services/agentRunner';
+import {
+  authorizeIncidentAccess,
+  authorizeTaskAccess,
+  computeTwilioSignature,
+  validateTwilioSignature
+} from '../../../../supabase/functions/_shared/auth';
 import { DatabaseClient, TwilioClient, ElevenLabsClient } from '../../../../supabase/functions/_shared/types';
 
 function createMockDb(initial: {
   incident?: Incident;
   contacts?: EmergencyContact[];
   notification?: Notification;
+  task?: AgentTask;
 }): DatabaseClient {
   const incident = initial.incident || {
     id: 'inc-100',
@@ -41,7 +52,10 @@ function createMockDb(initial: {
     notifications.set(initial.notification.id, initial.notification);
   }
 
-  const agentTasks = new Map<string, any>();
+  const agentTasks = new Map<string, AgentTask>();
+  if (initial.task) {
+    agentTasks.set(initial.task.id, initial.task);
+  }
 
   return {
     async getIncident(id: string) {
@@ -52,7 +66,18 @@ function createMockDb(initial: {
     },
     async createAgentTask(task) {
       const id = task.id || `task-${agentTasks.size + 1}`;
-      const created = { ...task, id };
+      const created: AgentTask = {
+        id,
+        incident_id: task.incident_id,
+        agent_name: task.agent_name,
+        task_type: task.task_type,
+        status: task.status ?? AgentTaskStatus.PENDING,
+        input_data: task.input_data,
+        output_data: task.output_data,
+        is_demo: task.is_demo ?? false,
+        created_at: task.created_at || new Date().toISOString(),
+        completed_at: task.completed_at
+      };
       agentTasks.set(id, created);
       return created;
     },
@@ -73,6 +98,7 @@ function createMockDb(initial: {
         recipient: notif.recipient,
         status: notif.status,
         is_demo: notif.is_demo ?? false,
+        retry_count: notif.retry_count ?? 0,
         created_at: notif.created_at || new Date().toISOString(),
         updated_at: notif.updated_at || new Date().toISOString(),
         provider_reference: notif.provider_reference,
@@ -87,6 +113,11 @@ function createMockDb(initial: {
     async updateNotification(id: string, updates) {
       const existing = notifications.get(id);
       if (existing) notifications.set(id, { ...existing, ...updates });
+    },
+    async getRetryScheduledNotifications() {
+      return Array.from(notifications.values()).filter(
+        n => n.status === NotificationStatus.RETRY_SCHEDULED
+      );
     },
     async getTriageAssessment() {
       return null;
@@ -131,10 +162,10 @@ describe('Emergency Intelligence (Backend Services)', () => {
       makeVoiceCall: twilioMakeVoiceCall
     };
 
-    const elevenLabsSynthesize = vi.fn();
+    const elevenLabsSpeech = vi.fn();
     const mockElevenLabs: ElevenLabsClient = {
       isConfigured: () => true,
-      synthesizeSpeech: elevenLabsSynthesize
+      synthesizeSpeech: elevenLabsSpeech
     };
 
     const result = await sendNotificationLogic(notification.id, {
@@ -143,24 +174,25 @@ describe('Emergency Intelligence (Backend Services)', () => {
       elevenLabs: mockElevenLabs
     });
 
-    // Verify external telephony APIs were NEVER touched
-    expect(twilioSendSms).not.toHaveBeenCalled();
-    expect(twilioMakeVoiceCall).not.toHaveBeenCalled();
-    expect(elevenLabsSynthesize).not.toHaveBeenCalled();
-
-    // Verify notification was marked simulated and delivered
     expect(result.status).toBe(NotificationStatus.DELIVERED);
+    expect(result.providerReference).toMatch(/^DEMO-REF-/);
     expect(result.errorMessage).toContain('[DEMO]');
-    expect(result.providerReference).toContain('DEMO-REF');
 
-    const updatedNotif = await db.getNotification(notification.id);
-    expect(updatedNotif?.status).toBe(NotificationStatus.DELIVERED);
+    // Absolute zero outbound calls in demo mode
+    expect(twilioSendSms).toHaveBeenCalledTimes(0);
+    expect(twilioMakeVoiceCall).toHaveBeenCalledTimes(0);
+    expect(elevenLabsSpeech).toHaveBeenCalledTimes(0);
+
+    const saved = await db.getNotification(notification.id);
+    expect(saved?.status).toBe(NotificationStatus.DELIVERED);
+    expect(saved?.provider_reference).toMatch(/^DEMO-REF-/);
+    expect(saved?.error_message).toContain('[DEMO]');
   });
 
-  it('CONSENT FILTERING: Notifies only contacts with consent = true and creates all five agent tasks', async () => {
+  it('CONSENT FILTER: Only creates notifications for contacts with consent = true', async () => {
     const incident: Incident = {
-      id: 'incident-multi-contact',
-      user_id: 'user-1',
+      id: 'inc-consent-test',
+      user_id: 'user-hiker-1',
       incident_type: IncidentType.MANUAL_SOS,
       priority: IncidentPriority.HIGH,
       status: IncidentStatus.EMERGENCY_INITIATED,
@@ -171,19 +203,19 @@ describe('Emergency Intelligence (Backend Services)', () => {
 
     const contacts: EmergencyContact[] = [
       {
-        id: 'contact-consented-1',
-        user_id: 'user-1',
-        contact_name: 'Priya Sharma',
+        id: 'contact-1',
+        user_id: incident.user_id,
+        contact_name: 'Priya Sharma (Sister)',
         phone_number: '+919876543210',
-        relationship: 'Spouse',
+        relationship: 'Sibling',
         priority: 1,
         consent: true, // CONSENTED
         created_at: new Date().toISOString()
       },
       {
-        id: 'contact-unconsented',
-        user_id: 'user-1',
-        contact_name: 'Rohan Verma',
+        id: 'contact-2',
+        user_id: incident.user_id,
+        contact_name: 'Old Colleague (Unconsented)',
         phone_number: '+919876543211',
         relationship: 'Colleague',
         priority: 2,
@@ -191,11 +223,11 @@ describe('Emergency Intelligence (Backend Services)', () => {
         created_at: new Date().toISOString()
       },
       {
-        id: 'contact-consented-2',
-        user_id: 'user-1',
-        contact_name: 'Deepak Patel',
+        id: 'contact-3',
+        user_id: incident.user_id,
+        contact_name: 'Rajesh Sharma (Father)',
         phone_number: '+919876543212',
-        relationship: 'Sibling',
+        relationship: 'Parent',
         priority: 3,
         consent: true, // CONSENTED
         created_at: new Date().toISOString()
@@ -293,5 +325,293 @@ describe('Emergency Intelligence (Backend Services)', () => {
     // Verified fallback cache was activated without throwing unhandled exceptions
     expect(hospitals[0].name).toContain('[FALLBACK CACHE]');
     expect(hospitals[0].distanceKm).toBeGreaterThan(0);
+  });
+
+  // ==================== BATCH 4 GAP-FILL TESTS ====================
+
+  it('OWNERSHIP CHECK: Owner allowed, other user denied (403), service role allowed for process-incident & run-agent-task', async () => {
+    const incident: Incident = {
+      id: 'inc-auth-100',
+      user_id: 'owner-user-123',
+      incident_type: IncidentType.MANUAL_SOS,
+      priority: IncidentPriority.HIGH,
+      status: IncidentStatus.EMERGENCY_INITIATED,
+      detection_source: DetectionSource.MANUAL,
+      is_demo: true,
+      created_at: new Date().toISOString()
+    };
+
+    const task: AgentTask = {
+      id: 'task-auth-200',
+      incident_id: incident.id,
+      agent_name: AgentName.LOCATION_INTELLIGENCE,
+      task_type: 'hospital_lookup',
+      status: AgentTaskStatus.PENDING,
+      is_demo: true
+    };
+
+    const db = createMockDb({ incident, task });
+
+    // 1. Incident ownership checks
+    const ownerAuth = { userId: 'owner-user-123', isServiceRole: false };
+    const intruderAuth = { userId: 'unauthorized-stranger', isServiceRole: false };
+    const serviceRoleAuth = { userId: 'service_role', isServiceRole: true };
+
+    const ownerRes = await authorizeIncidentAccess(incident.id, db, ownerAuth);
+    expect(ownerRes.allowed).toBe(true);
+    expect(ownerRes.status).toBe(200);
+
+    const intruderRes = await authorizeIncidentAccess(incident.id, db, intruderAuth);
+    expect(intruderRes.allowed).toBe(false);
+    expect(intruderRes.status).toBe(403);
+    expect(intruderRes.error).toContain('Forbidden');
+
+    const serviceRoleRes = await authorizeIncidentAccess(incident.id, db, serviceRoleAuth);
+    expect(serviceRoleRes.allowed).toBe(true);
+    expect(serviceRoleRes.status).toBe(200);
+
+    // 2. Task authorization checks (verifies parent incident ownership)
+    const taskOwnerRes = await authorizeTaskAccess(task.id, db, ownerAuth);
+    expect(taskOwnerRes.allowed).toBe(true);
+    expect(taskOwnerRes.status).toBe(200);
+
+    const taskIntruderRes = await authorizeTaskAccess(task.id, db, intruderAuth);
+    expect(taskIntruderRes.allowed).toBe(false);
+    expect(taskIntruderRes.status).toBe(403);
+
+    const taskServiceRoleRes = await authorizeTaskAccess(task.id, db, serviceRoleAuth);
+    expect(taskServiceRoleRes.allowed).toBe(true);
+    expect(taskServiceRoleRes.status).toBe(200);
+  });
+
+  it('DEMO INTEGRITY: Request body claiming is_demo=false for a demo incident row still sends nothing', async () => {
+    const demoDbIncident: Incident = {
+      id: 'inc-db-demo-real',
+      user_id: 'user-1',
+      incident_type: IncidentType.FALL_DETECTED,
+      priority: IncidentPriority.HIGH,
+      status: IncidentStatus.EMERGENCY_INITIATED,
+      detection_source: DetectionSource.ACCELEROMETER,
+      is_demo: true, // DB row is explicitly demo
+      created_at: new Date().toISOString()
+    };
+
+    const contacts: EmergencyContact[] = [
+      {
+        id: 'contact-demo-1',
+        user_id: demoDbIncident.user_id,
+        contact_name: 'Priya Sharma',
+        phone_number: '+919876543210',
+        relationship: 'Sibling',
+        priority: 1,
+        consent: true,
+        created_at: new Date().toISOString()
+      }
+    ];
+
+    const db = createMockDb({ incident: demoDbIncident, contacts });
+
+    const twilioSendSms = vi.fn();
+    const mockTwilio: TwilioClient = {
+      isConfigured: () => true,
+      sendSms: twilioSendSms,
+      makeVoiceCall: vi.fn()
+    };
+
+    const mockElevenLabs: ElevenLabsClient = {
+      isConfigured: () => true,
+      synthesizeSpeech: vi.fn()
+    };
+
+    // Caller passes a payload claiming is_demo = false in request body
+    const spoofedRequestBody = {
+      incident_id: demoDbIncident.id,
+      is_demo: false // Malicious or mistaken override attempt
+    };
+
+    // processIncidentLogic MUST pull from DB row, ignoring any body claim
+    const procResult = await processIncidentLogic(spoofedRequestBody.incident_id, {
+      db,
+      runAgentTask: vi.fn().mockResolvedValue(undefined),
+      sendNotification: vi.fn().mockResolvedValue(undefined)
+    });
+
+    const notifCreated = procResult.notificationsCreated[0];
+    expect(notifCreated.is_demo).toBe(true); // Must remain demo because DB row is demo!
+
+    // When dispatched, Twilio must NEVER be called
+    const sendResult = await sendNotificationLogic(notifCreated.id, {
+      db,
+      twilio: mockTwilio,
+      elevenLabs: mockElevenLabs
+    });
+
+    expect(twilioSendSms).toHaveBeenCalledTimes(0);
+    expect(sendResult.status).toBe(NotificationStatus.DELIVERED);
+    expect(sendResult.errorMessage).toContain('[DEMO]');
+    expect(sendResult.providerReference).toContain('DEMO-REF');
+  });
+
+  it('TWILIO WEBHOOK: Validates X-Twilio-Signature and rejects invalid signatures with 403', async () => {
+    const authToken = 'mock_auth_token_secret_12345';
+    const webhookUrl = 'https://safety.trinetra.live/functions/v1/send-notification?action=webhook';
+    const params = {
+      MessageSid: 'SM1234567890abcdef',
+      MessageStatus: 'delivered',
+      To: '+919876543210'
+    };
+
+    // 1. Valid signature should pass
+    const validSignature = await computeTwilioSignature(authToken, webhookUrl, params);
+    const isValid = await validateTwilioSignature(authToken, validSignature, webhookUrl, params);
+    expect(isValid).toBe(true);
+
+    // 2. Tampered signature should be rejected
+    const isInvalidSig = await validateTwilioSignature(authToken, 'invalid_forged_signature', webhookUrl, params);
+    expect(isInvalidSig).toBe(false);
+
+    // 3. Tampered params with original signature should be rejected
+    const tamperedParams = { ...params, MessageStatus: 'failed' };
+    const isTamperedParams = await validateTwilioSignature(authToken, validSignature, webhookUrl, tamperedParams);
+    expect(isTamperedParams).toBe(false);
+
+    // 4. Missing signature or missing auth token should be rejected
+    expect(await validateTwilioSignature(undefined, validSignature, webhookUrl, params)).toBe(false);
+    expect(await validateTwilioSignature(authToken, null, webhookUrl, params)).toBe(false);
+  });
+
+  it('MISSING KEYS RETRY TEST: Skipped rows are marked status=failed and never retried by sweep', async () => {
+    const skippedNotif: Notification = {
+      id: 'notif-skipped-1',
+      incident_id: 'inc-1',
+      channel: NotificationChannel.SMS,
+      recipient: '+919876543210',
+      status: NotificationStatus.FAILED,
+      error_message: 'skipped: not configured',
+      is_demo: false,
+      retry_count: 0,
+      created_at: new Date().toISOString()
+    };
+
+    // Even if somehow marked retry_scheduled, error_message 'skipped: not configured' must prevent retries
+    const scheduledSkippedNotif: Notification = {
+      id: 'notif-skipped-2',
+      incident_id: 'inc-1',
+      channel: NotificationChannel.SMS,
+      recipient: '+919876543211',
+      status: NotificationStatus.RETRY_SCHEDULED,
+      error_message: 'skipped: not configured',
+      is_demo: false,
+      retry_count: 0,
+      created_at: new Date().toISOString()
+    };
+
+    const db = createMockDb({ notification: scheduledSkippedNotif });
+
+    const twilioSendSms = vi.fn();
+    const mockTwilio: TwilioClient = {
+      isConfigured: () => false,
+      sendSms: twilioSendSms,
+      makeVoiceCall: vi.fn()
+    };
+
+    const sweepResult = await sweepNotificationRetriesLogic({
+      db,
+      twilio: mockTwilio,
+      elevenLabs: { isConfigured: () => false, synthesizeSpeech: vi.fn() }
+    });
+
+    expect(sweepResult.skippedUnconfiguredCount).toBe(1);
+    expect(sweepResult.retriedIds).toHaveLength(0);
+    expect(twilioSendSms).toHaveBeenCalledTimes(0);
+
+    const saved = await db.getNotification(scheduledSkippedNotif.id);
+    expect(saved?.status).toBe(NotificationStatus.FAILED);
+    expect(saved?.error_message).toBe('skipped: not configured');
+  });
+
+  it('RETRIES: Sweeps retry_scheduled rows with backoff, max 3 attempts, and never retries demo rows', async () => {
+    const liveIncident: Incident = {
+      id: 'inc-retry-test',
+      user_id: 'user-retry',
+      incident_type: IncidentType.MANUAL_SOS,
+      priority: IncidentPriority.HIGH,
+      status: IncidentStatus.EMERGENCY_INITIATED,
+      detection_source: DetectionSource.MANUAL,
+      is_demo: false,
+      created_at: new Date().toISOString()
+    };
+
+    // 1. Normal retry_scheduled row (attempt 1) -> Should be retried
+    const normalRetryRow: Notification = {
+      id: 'notif-retry-eligible',
+      incident_id: liveIncident.id,
+      channel: NotificationChannel.SMS,
+      recipient: '+919876543210',
+      status: NotificationStatus.RETRY_SCHEDULED,
+      error_message: 'Network timeout',
+      is_demo: false,
+      retry_count: 1, // Attempt 1 -> Eligible for retry
+      created_at: new Date().toISOString()
+    };
+
+    // 2. Max attempts exceeded row (attempt 3) -> Should transition to failed
+    const maxedRetryRow: Notification = {
+      id: 'notif-retry-maxed',
+      incident_id: liveIncident.id,
+      channel: NotificationChannel.SMS,
+      recipient: '+919876543211',
+      status: NotificationStatus.RETRY_SCHEDULED,
+      error_message: 'Persistent gateway error',
+      is_demo: false,
+      retry_count: 3, // Already reached max attempts
+      created_at: new Date().toISOString()
+    };
+
+    // 3. Demo retry_scheduled row -> Should NEVER be retried
+    const demoRetryRow: Notification = {
+      id: 'notif-retry-demo',
+      incident_id: liveIncident.id,
+      channel: NotificationChannel.SMS,
+      recipient: '+919876543212',
+      status: NotificationStatus.RETRY_SCHEDULED,
+      error_message: 'Simulated failure',
+      is_demo: true, // DEMO ROW
+      retry_count: 0,
+      created_at: new Date().toISOString()
+    };
+
+    const db = createMockDb({ incident: liveIncident });
+    await db.createNotification(normalRetryRow);
+    await db.createNotification(maxedRetryRow);
+    await db.createNotification(demoRetryRow);
+
+    const twilioSendSms = vi.fn().mockResolvedValue({ success: true, sid: 'SM_RETRY_SUCCESS' });
+    const mockTwilio: TwilioClient = {
+      isConfigured: () => true,
+      sendSms: twilioSendSms,
+      makeVoiceCall: vi.fn()
+    };
+
+    const sweepResult = await sweepNotificationRetriesLogic({
+      db,
+      twilio: mockTwilio,
+      elevenLabs: { isConfigured: () => true, synthesizeSpeech: vi.fn() },
+      maxAttempts: 3
+    });
+
+    // Eligible row was retried
+    expect(sweepResult.retriedIds).toContain('notif-retry-eligible');
+    expect(twilioSendSms).toHaveBeenCalledTimes(1);
+    expect(twilioSendSms).toHaveBeenCalledWith('+919876543210', expect.any(String));
+
+    // Demo row was skipped
+    expect(sweepResult.skippedDemoCount).toBe(1);
+
+    // Maxed row was marked failed
+    expect(sweepResult.failedIds).toContain('notif-retry-maxed');
+    const updatedMaxed = await db.getNotification('notif-retry-maxed');
+    expect(updatedMaxed?.status).toBe(NotificationStatus.FAILED);
+    expect(updatedMaxed?.error_message).toContain('max retries exceeded');
   });
 });

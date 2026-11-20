@@ -60,6 +60,15 @@ export function createSupabaseDbClient(supabase: SupabaseClient): DatabaseClient
       if (error) throw error;
     },
 
+    async getRetryScheduledNotifications(): Promise<Notification[]> {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('status', 'retry_scheduled');
+      if (error) throw error;
+      return data || [];
+    },
+
     async getTriageAssessment(incidentId: string): Promise<TriageAssessment | null> {
       const { data, error } = await supabase.from('triage_assessments').select('*').eq('incident_id', incidentId).maybeSingle();
       if (error) throw error;

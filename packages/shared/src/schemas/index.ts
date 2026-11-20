@@ -95,6 +95,7 @@ export const AgentTaskSchema = z.object({
   input_data: z.record(z.unknown()).nullable().optional(),
   output_data: z.record(z.unknown()).nullable().optional(),
   is_demo: z.boolean().default(false),
+  retry_count: z.number().int().default(0).optional(),
   created_at: z.string().datetime().optional(),
   completed_at: z.string().datetime().nullable().optional()
 });
@@ -109,6 +110,7 @@ export const NotificationSchema = z.object({
   status: z.nativeEnum(NotificationStatus).default(NotificationStatus.PENDING),
   error_message: z.string().nullable().optional(),
   is_demo: z.boolean().default(false),
+  retry_count: z.number().int().default(0).optional(),
   created_at: z.string().datetime().optional(),
   updated_at: z.string().datetime().optional()
 });

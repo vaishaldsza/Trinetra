@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { z } from 'https://esm.sh/zod@3.22.4';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
-import { authenticateCaller } from '../_shared/auth.ts';
+import { authenticateCaller, authorizeTaskAccess } from '../_shared/auth.ts';
 import { defaultRateLimiter } from '../_shared/rateLimit.ts';
 import { createSupabaseDbClient } from '../_shared/dbAdapter.ts';
 import {
@@ -61,6 +61,16 @@ serve(async (req: Request) => {
 
     const { task_id } = parseResult.data;
     const db = createSupabaseDbClient(supabase);
+
+    // 3. Verify task & parent incident exists and caller has permission (incident owner or service role)
+    const authz = await authorizeTaskAccess(task_id, db, authContext);
+    if (!authz.allowed) {
+      return new Response(JSON.stringify({ error: authz.error }), {
+        status: authz.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const overpass = new OverpassHospitalClient(Deno.env.get('OVERPASS_API_URL'));
     const agentverse = new AgentverseClientAdapter(Deno.env.get('AGENTVERSE_API_KEY'));
 

@@ -60,6 +60,7 @@ export interface DatabaseClient {
   createNotification(notif: Omit<Notification, 'id'> & { id?: string }): Promise<Notification>;
   getNotification(id: string): Promise<Notification | null>;
   updateNotification(id: string, updates: Partial<Notification>): Promise<void>;
+  getRetryScheduledNotifications(): Promise<Notification[]>;
   getTriageAssessment(incidentId: string): Promise<TriageAssessment | null>;
   getVitalReadings(incidentId: string): Promise<VitalReading[]>;
 }
