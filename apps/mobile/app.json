@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "TRINETRA",
+    "slug": "trinetra-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "trinetra",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0F172A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "safety.trinetra.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A"
+      },
+      "package": "safety.trinetra.mobile"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
