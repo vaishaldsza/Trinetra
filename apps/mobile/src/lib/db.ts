@@ -15,7 +15,7 @@ import {
 
 export interface SyncQueueItem {
   id: string;
-  table_name: 'profiles' | 'emergency_contacts' | 'hiking_sessions' | 'incidents' | 'location_history';
+  table_name: 'profiles' | 'emergency_contacts' | 'hiking_sessions' | 'incidents' | 'location_history' | 'triage_assessments' | 'vital_readings';
   action: 'insert' | 'update' | 'delete';
   record_id: string;
   payload_json: string;

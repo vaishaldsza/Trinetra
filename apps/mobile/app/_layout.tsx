@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { DEMO_BANNER_LABEL } from '@trinetra/shared';
+import { FallAlertModal } from '../src/components/FallAlertModal';
 
 export default function RootLayout() {
   const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
@@ -16,6 +17,9 @@ export default function RootLayout() {
           <Text style={styles.demoText}>TRINETRA SAFETY · OFFLINE SIMULATION</Text>
         </View>
       )}
+
+      {/* Global Fall Alert Modal */}
+      <FallAlertModal />
 
       <Stack
         screenOptions={{

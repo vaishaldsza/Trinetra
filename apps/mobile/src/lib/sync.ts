@@ -79,6 +79,12 @@ export async function processSyncQueue(): Promise<SyncResult> {
       } else if (item.table_name === 'location_history') {
         const { error } = await supabase.from('location_history').upsert(payload);
         if (error) throw error;
+      } else if (item.table_name === 'triage_assessments') {
+        const { error } = await supabase.from('triage_assessments').upsert(payload);
+        if (error) throw error;
+      } else if (item.table_name === 'vital_readings') {
+        const { error } = await supabase.from('vital_readings').upsert(payload);
+        if (error) throw error;
       } else if (item.table_name === 'incidents') {
         // Idempotent upsert with client-generated UUID
         const { error } = await supabase.from('incidents').upsert(payload);

@@ -21,6 +21,7 @@
     "expo-location": "~18.0.10",
     "expo-network": "~7.0.5",
     "expo-router": "~4.0.16",
+    "expo-sensors": "~14.0.2",
     "expo-sqlite": "~15.1.4",
     "expo-status-bar": "~2.0.1",
     "query-string": "^10.0.0",

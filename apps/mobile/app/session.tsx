@@ -13,7 +13,9 @@ export default function SessionScreen() {
     resumeSession,
     stopSession,
     sessionElapsedSeconds,
-    incrementElapsed
+    incrementElapsed,
+    isFallDetectionActive,
+    simulateFallEvent
   } = useSafetyStore();
 
   const [trailName, setTrailName] = useState('Rohtang Pass Ridge');
@@ -71,6 +73,15 @@ export default function SessionScreen() {
               Session ID: {activeSession.id.slice(0, 8)}... (Offline SQLite)
             </Text>
 
+            <View style={styles.sensorStatusRow}>
+              <View style={[styles.sensorDot, isFallDetectionActive ? styles.sensorDotActive : styles.sensorDotInactive]} />
+              <Text style={styles.sensorStatusText}>
+                {isFallDetectionActive
+                  ? 'Sensor Fall Detection: ACTIVE (sampling accelerometer & gyro)'
+                  : 'Sensor Fall Detection: INACTIVE'}
+              </Text>
+            </View>
+
             <View style={styles.controlRow}>
               {activeSession.status === HikingSessionStatus.ACTIVE ? (
                 <TouchableOpacity style={styles.pauseButton} onPress={pauseSession}>
@@ -86,6 +97,13 @@ export default function SessionScreen() {
                 <Text style={styles.controlButtonText}>⏹ End Session</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.simulateFallButton}
+              onPress={simulateFallEvent}
+            >
+              <Text style={styles.simulateFallText}>⚡ Simulate Fall Detection Event [DEMO]</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.sosQuickLink}
@@ -194,8 +212,53 @@ const styles = StyleSheet.create({
   sessionMeta: {
     fontSize: 11,
     color: '#64748B',
-    marginBottom: 24,
+    marginBottom: 14,
     fontFamily: 'monospace'
+  },
+  sensorStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#020617',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    marginBottom: 16,
+    width: '100%'
+  },
+  sensorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4
+  },
+  sensorDotActive: {
+    backgroundColor: '#22C55E'
+  },
+  sensorDotInactive: {
+    backgroundColor: '#64748B'
+  },
+  sensorStatusText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '600'
+  },
+  simulateFallButton: {
+    width: '100%',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#3B1D11',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F97316',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  simulateFallText: {
+    color: '#FED7AA',
+    fontSize: 12,
+    fontWeight: '700'
   },
   controlRow: {
     flexDirection: 'row',

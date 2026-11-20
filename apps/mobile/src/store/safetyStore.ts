@@ -8,6 +8,8 @@ import {
   Incident,
   Profile,
   LocationHistory,
+  TriageAssessment,
+  VitalReading,
   HikingSessionStatus,
   IncidentPriority,
   IncidentStatus,
@@ -29,11 +31,15 @@ import {
   saveLocalIncident,
   getLocalIncidents,
   saveLocalLocationPoint,
+  saveLocalTriage,
   enqueueSync,
   getSyncStatusCounts,
   SyncStatusCounts
 } from '../lib/db';
 import { processSyncQueue } from '../lib/sync';
+import { fallDetector } from '../lib/fallDetector';
+import { FALL_DETECTION_CONFIG } from '../config/fallDetection';
+import { TriageInput, evaluateTriageRules, localTriageAssistant } from '../lib/triageEngine';
 
 interface LocationCoords {
   latitude: number;
@@ -56,6 +62,11 @@ interface SafetyState {
   locationPermissionGranted: boolean | null;
   locationWatcherSubscription: Location.LocationSubscription | null;
 
+  // Fall Detection State
+  isFallDetectionActive: boolean;
+  fallCountdownSeconds: number | null;
+  showFallAlertModal: boolean;
+
   // Actions
   initStore: () => Promise<void>;
   updateProfile: (fullName: string, phone: string) => Promise<{ success: boolean; error?: string }>;
@@ -65,11 +76,25 @@ interface SafetyState {
   pauseSession: () => Promise<void>;
   resumeSession: () => Promise<void>;
   stopSession: () => Promise<void>;
-  triggerSOS: () => Promise<Incident>;
+  triggerSOS: (
+    detectionSource?: DetectionSource,
+    incidentType?: IncidentType
+  ) => Promise<Incident>;
   cancelSOS: (incidentId: string) => Promise<void>;
   syncNow: () => Promise<void>;
   incrementElapsed: () => void;
   checkNetworkAndSync: () => Promise<void>;
+
+  // Fall Detection Actions
+  onFallDetected: () => void;
+  confirmFallSOS: () => Promise<void>;
+  dismissFallAlert: () => void;
+  simulateFallEvent: () => void;
+  decrementFallCountdown: () => void;
+
+  // Triage & Vitals
+  submitTriage: (input: TriageInput) => Promise<TriageAssessment>;
+  recordVitalReading: (bpm: number, quality: number) => Promise<VitalReading>;
 }
 
 const DEFAULT_USER_ID = 'a0000000-0000-0000-0000-000000000001';
@@ -93,6 +118,10 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   lastKnownLocation: null,
   locationPermissionGranted: null,
   locationWatcherSubscription: null,
+
+  isFallDetectionActive: false,
+  fallCountdownSeconds: null,
+  showFallAlertModal: false,
 
   initStore: async () => {
     await getDb();
@@ -146,7 +175,12 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       syncCounts: counts
     });
 
-    // Check network and trigger sync if connected
+    // If an active session was restored, restart fall detection
+    if (active && active.status === HikingSessionStatus.ACTIVE) {
+      fallDetector.start(() => get().onFallDetected());
+      set({ isFallDetectionActive: true });
+    }
+
     get().checkNetworkAndSync();
   },
 
@@ -169,7 +203,6 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       phone: phone.trim() ? phone.trim() : null
     };
 
-    // Zod validation with shared schema
     const validation = ProfileSchema.pick({ full_name: true, email: true, phone: true }).safeParse(candidate);
     if (!validation.success) {
       const errorMsg = validation.error.errors[0]?.message || 'Invalid profile information';
@@ -199,7 +232,6 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       priority
     };
 
-    // Zod validation with shared schema (validates E.164 phone)
     const validation = EmergencyContactSchema.pick({
       contact_name: true,
       phone_number: true,
@@ -243,7 +275,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
     const userId = get().profile.id;
     const now = new Date().toISOString();
 
-    // 1. Request GPS Permission with graceful denial
+    // 1. Request GPS Permission
     let coords: LocationCoords | null = null;
     let sub: Location.LocationSubscription | null = null;
 
@@ -257,12 +289,11 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
         coords = {
           latitude: initial.coords.latitude,
           longitude: initial.coords.longitude,
-          accuracy: initial.coords.accuracy || undefined,
+          accuracy: initial.coords.accuracy ?? undefined,
           recorded_at: now
         };
         set({ lastKnownLocation: coords });
 
-        // Start location watcher: 15s interval or 10m distance
         sub = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.Balanced,
@@ -277,7 +308,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
               session_id: currentSession.id,
               latitude: loc.coords.latitude,
               longitude: loc.coords.longitude,
-              accuracy: loc.coords.accuracy || undefined,
+              accuracy: loc.coords.accuracy ?? undefined,
               recorded_at: new Date().toISOString()
             };
             await saveLocalLocationPoint(pt);
@@ -314,11 +345,15 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
     await enqueueSync(Crypto.randomUUID(), 'hiking_sessions', 'insert', session.id, session as unknown as Record<string, unknown>);
     const counts = await getSyncStatusCounts();
 
+    // Start fall detection sensors strictly during active session
+    await fallDetector.start(() => get().onFallDetected());
+
     set({
       activeSession: session,
       sessionElapsedSeconds: 0,
       syncCounts: counts,
-      locationWatcherSubscription: sub
+      locationWatcherSubscription: sub,
+      isFallDetectionActive: true
     });
 
     return session;
@@ -327,28 +362,31 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   pauseSession: async () => {
     const session = get().activeSession;
     if (!session) return;
+    fallDetector.stop();
     const updated: HikingSession = { ...session, status: HikingSessionStatus.PAUSED };
     await saveLocalSession(updated);
     await enqueueSync(Crypto.randomUUID(), 'hiking_sessions', 'update', updated.id, updated as unknown as Record<string, unknown>);
     const counts = await getSyncStatusCounts();
-    set({ activeSession: updated, syncCounts: counts });
+    set({ activeSession: updated, syncCounts: counts, isFallDetectionActive: false });
   },
 
   resumeSession: async () => {
     const session = get().activeSession;
     if (!session) return;
+    await fallDetector.start(() => get().onFallDetected());
     const updated: HikingSession = { ...session, status: HikingSessionStatus.ACTIVE };
     await saveLocalSession(updated);
     await enqueueSync(Crypto.randomUUID(), 'hiking_sessions', 'update', updated.id, updated as unknown as Record<string, unknown>);
     const counts = await getSyncStatusCounts();
-    set({ activeSession: updated, syncCounts: counts });
+    set({ activeSession: updated, syncCounts: counts, isFallDetectionActive: true });
   },
 
   stopSession: async () => {
     const session = get().activeSession;
     if (!session) return;
 
-    // Unsubscribe location watcher
+    // Stop and unhook all sensors to prevent battery drain
+    fallDetector.stop();
     const sub = get().locationWatcherSubscription;
     if (sub) {
       sub.remove();
@@ -370,39 +408,43 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       pastSessions: past.filter(s => s.status === HikingSessionStatus.COMPLETED),
       sessionElapsedSeconds: 0,
       syncCounts: counts,
-      locationWatcherSubscription: null
+      locationWatcherSubscription: null,
+      isFallDetectionActive: false,
+      showFallAlertModal: false,
+      fallCountdownSeconds: null
     });
   },
 
-  triggerSOS: async () => {
+  // Reusable SOS Creation Path (Reused by manual SOS and fall detection)
+  triggerSOS: async (
+    detectionSource: DetectionSource = DetectionSource.MANUAL,
+    incidentType: IncidentType = IncidentType.MANUAL_SOS
+  ) => {
     const userId = get().profile.id;
     const session = get().activeSession;
     const lastLoc = get().lastKnownLocation;
 
-    // Idempotent client-generated UUID
     const incidentId = Crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Attach last-known GPS location to the incident
     const incident: Incident = {
       id: incidentId,
       user_id: userId,
       session_id: session?.id,
-      incident_type: IncidentType.MANUAL_SOS,
+      incident_type: incidentType,
       latitude: lastLoc?.latitude ?? 32.3716,
       longitude: lastLoc?.longitude ?? 77.2466,
       last_known_location_at: lastLoc?.recorded_at || now,
       priority: IncidentPriority.CRITICAL,
       status: IncidentStatus.EMERGENCY_INITIATED,
-      detection_source: DetectionSource.MANUAL,
+      detection_source: detectionSource,
       is_demo: true,
       created_at: now
     };
 
-    // Save to local SQLite immediately
+    // Save locally to SQLite immediately (Critical emergency never waits on cloud/AI)
     await saveLocalIncident(incident);
 
-    // Update active session to emergency active
     if (session) {
       const updatedSession: HikingSession = {
         ...session,
@@ -412,11 +454,15 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       await enqueueSync(Crypto.randomUUID(), 'hiking_sessions', 'update', updatedSession.id, updatedSession as unknown as Record<string, unknown>);
     }
 
-    // Enqueue incident for background sync
     await enqueueSync(Crypto.randomUUID(), 'incidents', 'insert', incident.id, incident as unknown as Record<string, unknown>);
     const counts = await getSyncStatusCounts();
 
-    set({ activeIncident: incident, syncCounts: counts });
+    set({
+      activeIncident: incident,
+      syncCounts: counts,
+      showFallAlertModal: false,
+      fallCountdownSeconds: null
+    });
     return incident;
   },
 
@@ -441,6 +487,104 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
 
     const counts = await getSyncStatusCounts();
     set({ activeIncident: null, syncCounts: counts });
+  },
+
+  // Fall Detection Handling
+  onFallDetected: () => {
+    // Only proceed if session active and not already handling an alert
+    if (get().showFallAlertModal || get().activeIncident) return;
+    set({
+      showFallAlertModal: true,
+      fallCountdownSeconds: FALL_DETECTION_CONFIG.CONFIRMATION_COUNTDOWN_SECONDS
+    });
+  },
+
+  confirmFallSOS: async () => {
+    // Reuses the existing SOS creation path, setting detection_source = fall
+    await get().triggerSOS(DetectionSource.ACCELEROMETER, IncidentType.FALL_DETECTED);
+  },
+
+  dismissFallAlert: () => {
+    set({
+      showFallAlertModal: false,
+      fallCountdownSeconds: null
+    });
+  },
+
+  simulateFallEvent: () => {
+    get().onFallDetected();
+  },
+
+  decrementFallCountdown: () => {
+    const current = get().fallCountdownSeconds;
+    if (current === null) return;
+    if (current <= 1) {
+      // Countdown expired: automatically escalate to emergency assistance
+      get().confirmFallSOS();
+    } else {
+      set({ fallCountdownSeconds: current - 1 });
+    }
+  },
+
+  // Triage Submission
+  submitTriage: async (input: TriageInput): Promise<TriageAssessment> => {
+    const incident = get().activeIncident;
+    const ruleEvaluation = evaluateTriageRules(input);
+    const summary = await localTriageAssistant.generateStructuredSummary(input);
+
+    const triageRecord: TriageAssessment = {
+      id: Crypto.randomUUID(),
+      incident_id: incident?.id || 'd0000000-0000-0000-0000-000000000001',
+      consciousness_status: input.consciousness,
+      breathing_difficulty: input.breathingDifficulty,
+      bleeding_status: input.bleeding,
+      injury_location: input.injuryLocation,
+      mobility_status: input.mobility,
+      pain_level: input.painLevel,
+      assessment_summary: summary,
+      created_at: new Date().toISOString()
+    };
+
+    // Save to local SQLite
+    await saveLocalTriage({
+      ...triageRecord,
+      created_at: triageRecord.created_at || new Date().toISOString()
+    });
+
+    // Update incident priority if triage indicates critical or higher
+    if (incident) {
+      const updatedIncident: Incident = {
+        ...incident,
+        priority: ruleEvaluation.priority
+      };
+      await saveLocalIncident(updatedIncident);
+      set({ activeIncident: updatedIncident });
+    }
+
+    await enqueueSync(Crypto.randomUUID(), 'triage_assessments', 'insert', triageRecord.id, triageRecord as unknown as Record<string, unknown>);
+    const counts = await getSyncStatusCounts();
+    set({ syncCounts: counts });
+
+    return triageRecord;
+  },
+
+  // Vitals Recording (Camera PPG non-diagnostic)
+  recordVitalReading: async (bpm: number, quality: number): Promise<VitalReading> => {
+    const incident = get().activeIncident;
+    const reading: VitalReading = {
+      id: Crypto.randomUUID(),
+      incident_id: incident?.id || 'd0000000-0000-0000-0000-000000000001',
+      heart_rate_estimate: bpm,
+      signal_quality: quality,
+      measurement_duration: 30.0,
+      recorded_at: new Date().toISOString()
+    };
+
+    await enqueueSync(Crypto.randomUUID(), 'vital_readings', 'insert', reading.id, reading as unknown as Record<string, unknown>);
+    const counts = await getSyncStatusCounts();
+    set({ syncCounts: counts });
+
+    return reading;
   },
 
   syncNow: async () => {
