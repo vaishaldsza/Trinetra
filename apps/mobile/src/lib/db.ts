@@ -227,6 +227,16 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     }
     await db.execAsync(`INSERT INTO schema_version (version, applied_at) VALUES (4, datetime('now'));`);
   }
+
+  // Migration 5: Add session_id to local_vital_readings
+  if (currentVersion < 5) {
+    try {
+      await db.execAsync(`ALTER TABLE local_vital_readings ADD COLUMN session_id TEXT;`);
+    } catch {
+      // Column may exist on fresh installs
+    }
+    await db.execAsync(`INSERT INTO schema_version (version, applied_at) VALUES (5, datetime('now'));`);
+  }
 }
 
 // ==================== PROFILE OPERATIONS ====================
@@ -491,12 +501,15 @@ export async function saveLocalTriage(triage: LocalTriageAssessment): Promise<vo
   }
 }
 
-export async function saveLocalVital(vital: VitalReading): Promise<void> {
+export async function saveLocalVital(vital: VitalReading & { session_id?: string }): Promise<void> {
   const db = await getDb();
   if (db) {
     await db.runAsync(
-      `INSERT INTO local_vital_readings (id, incident_id, heart_rate_estimate, signal_quality, measurement_duration, is_demo, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      `INSERT INTO local_vital_readings (id, incident_id, heart_rate_estimate, signal_quality, measurement_duration, is_demo, session_id, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         incident_id = excluded.incident_id,
+         session_id = excluded.session_id;`,
       [
         vital.id,
         vital.incident_id,
@@ -504,12 +517,87 @@ export async function saveLocalVital(vital: VitalReading): Promise<void> {
         vital.signal_quality,
         vital.measurement_duration,
         vital.is_demo !== false ? 1 : 0,
+        vital.session_id || null,
         vital.recorded_at
       ]
     );
   } else {
     memoryStore.vitals.set(vital.id, vital);
   }
+}
+
+export async function linkUnlinkedVitalsToIncident(
+  sessionId: string,
+  incidentId: string
+): Promise<number> {
+  const db = await getDb();
+  let count = 0;
+
+  if (db) {
+    interface UnlinkedVitalRow {
+      id: string;
+      incident_id: string;
+      heart_rate_estimate: number;
+      signal_quality: number;
+      measurement_duration: number;
+      is_demo: number;
+      session_id: string | null;
+      recorded_at: string;
+    }
+
+    const unlinked = await db.getAllAsync<UnlinkedVitalRow>(
+      `SELECT * FROM local_vital_readings 
+       WHERE session_id = ? AND (incident_id IS NULL OR incident_id = '00000000-0000-0000-0000-000000000000' OR incident_id LIKE 'd0000000-%');`,
+      [sessionId]
+    );
+
+    for (const r of unlinked) {
+      await db.runAsync(
+        `UPDATE local_vital_readings SET incident_id = ? WHERE id = ?;`,
+        [incidentId, r.id]
+      );
+
+      const vitalPayload: VitalReading = {
+        id: r.id,
+        incident_id: incidentId,
+        heart_rate_estimate: r.heart_rate_estimate,
+        signal_quality: r.signal_quality,
+        measurement_duration: r.measurement_duration,
+        is_demo: Boolean(r.is_demo),
+        recorded_at: r.recorded_at
+      };
+
+      await enqueueSync(
+        r.id + '-sync',
+        'vital_readings',
+        'insert',
+        r.id,
+        vitalPayload as unknown as Record<string, unknown>
+      );
+      count++;
+    }
+  } else {
+    for (const [id, v] of memoryStore.vitals.entries()) {
+      const item = v as VitalReading & { session_id?: string };
+      if (
+        item.session_id === sessionId &&
+        (!item.incident_id || item.incident_id === '00000000-0000-0000-0000-000000000000' || item.incident_id.startsWith('d0000000-'))
+      ) {
+        item.incident_id = incidentId;
+        const payload: VitalReading = { ...item };
+        await enqueueSync(
+          id + '-sync',
+          'vital_readings',
+          'insert',
+          id,
+          payload as unknown as Record<string, unknown>
+        );
+        count++;
+      }
+    }
+  }
+
+  return count;
 }
 
 export async function saveLocalNotificationRequest(notif: LocalNotificationRequest): Promise<void> {
@@ -648,4 +736,48 @@ export async function getSyncStatusCounts(): Promise<SyncStatusCounts> {
     else if (q.status === 'failed') counts.failed++;
   }
   return counts;
+}
+
+export type ParentSyncState = 'synced' | 'failed' | 'pending';
+
+export async function getParentSyncStatus(
+  tableName: SyncQueueItem['table_name'],
+  recordId: string
+): Promise<ParentSyncState> {
+  const db = await getDb();
+  if (db) {
+    // 1. Check sync_queue history for this record
+    const queueItem = await db.getFirstAsync<{ status: string }>(
+      `SELECT status FROM sync_queue WHERE table_name = ? AND record_id = ? ORDER BY updated_at DESC LIMIT 1;`,
+      [tableName, recordId]
+    );
+    if (queueItem) {
+      if (queueItem.status === 'failed') return 'failed';
+      if (queueItem.status === 'synced') return 'synced';
+      if (queueItem.status === 'pending' || queueItem.status === 'processing') return 'pending';
+    }
+
+    // 2. Check local tables for prior sync timestamps
+    if (tableName === 'incidents') {
+      const incident = await db.getFirstAsync<{ synced_at: string | null }>(
+        `SELECT synced_at FROM local_incidents WHERE id = ?;`,
+        [recordId]
+      );
+      if (incident?.synced_at) return 'synced';
+    }
+
+    return 'synced';
+  } else {
+    // Memory store fallback
+    const item = memoryStore.syncQueue
+      .slice()
+      .reverse()
+      .find(q => q.table_name === tableName && q.record_id === recordId);
+    if (item) {
+      if (item.status === 'failed') return 'failed';
+      if (item.status === 'synced') return 'synced';
+      if (item.status === 'pending' || item.status === 'processing') return 'pending';
+    }
+    return 'synced';
+  }
 }

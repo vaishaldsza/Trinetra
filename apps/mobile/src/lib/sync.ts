@@ -5,6 +5,7 @@ import {
   getSyncStatusCounts,
   saveLocalIncident,
   getLocalIncidents,
+  getParentSyncStatus,
   SyncStatusCounts,
   SyncQueueItem
 } from './db';
@@ -83,34 +84,45 @@ export async function processSyncQueue(): Promise<SyncResult> {
 
     const rawPayload = JSON.parse(item.payload_json);
 
-    // 2. Foreign-Key Dependency Check:
-    // A child row whose parent is not yet synced stays pending (not failed, no attempt penalty)
+    // 2. Foreign-Key Dependency & Parent Status Check:
+    // A parent counts as synced if it was synced in ANY earlier run or in the current run.
+    // If a parent is failed, mark child "blocked: parent failed" with that message in Settings.
+    // If a parent is still pending, leave child pending.
+    let parentCheck: { table: SyncQueueItem['table_name']; id: string } | null = null;
+
     if (item.table_name === 'emergency_contacts' || item.table_name === 'hiking_sessions') {
-      const parentUserId = rawPayload.user_id;
-      if (parentUserId && pendingRecordIds.has(parentUserId) && !syncedRecordIds.has(parentUserId)) {
-        continue;
-      }
+      if (rawPayload.user_id) parentCheck = { table: 'profiles', id: rawPayload.user_id };
     } else if (item.table_name === 'incidents') {
-      const parentSessionId = rawPayload.session_id;
-      if (parentSessionId && pendingRecordIds.has(parentSessionId) && !syncedRecordIds.has(parentSessionId)) {
-        continue;
-      }
-    } else if (item.table_name === 'triage_assessments' || item.table_name === 'vital_readings') {
+      if (rawPayload.session_id) parentCheck = { table: 'hiking_sessions', id: rawPayload.session_id };
+    } else if (item.table_name === 'triage_assessments') {
+      if (rawPayload.incident_id) parentCheck = { table: 'incidents', id: rawPayload.incident_id };
+    } else if (item.table_name === 'vital_readings') {
       const parentIncidentId = rawPayload.incident_id;
       // If vital reading has no incident, keep it local-only in SQLite
-      if (item.table_name === 'vital_readings' && (!parentIncidentId || parentIncidentId.startsWith('d0000000-'))) {
+      if (!parentIncidentId || parentIncidentId.startsWith('d0000000-') || parentIncidentId === '00000000-0000-0000-0000-000000000000') {
         await updateSyncItemResult(item.id, 'synced', false);
         syncedThisRun++;
         continue;
       }
-
-      if (parentIncidentId && pendingRecordIds.has(parentIncidentId) && !syncedRecordIds.has(parentIncidentId)) {
-        continue;
-      }
+      parentCheck = { table: 'incidents', id: parentIncidentId };
     } else if (item.table_name === 'location_history') {
-      const parentSessionId = rawPayload.session_id;
-      if (parentSessionId && pendingRecordIds.has(parentSessionId) && !syncedRecordIds.has(parentSessionId)) {
-        continue;
+      if (rawPayload.session_id) parentCheck = { table: 'hiking_sessions', id: rawPayload.session_id };
+    }
+
+    if (parentCheck) {
+      const isJustSynced = syncedRecordIds.has(parentCheck.id);
+      if (!isJustSynced) {
+        const parentState = await getParentSyncStatus(parentCheck.table, parentCheck.id);
+
+        if (parentState === 'failed') {
+          // If a parent is failed, mark the child "blocked: parent failed"
+          await updateSyncItemResult(item.id, 'failed', false, 'blocked: parent failed');
+          failedThisRun++;
+          continue;
+        } else if (parentState === 'pending' || pendingRecordIds.has(parentCheck.id)) {
+          // Parent is still pending, leave child pending without failure or attempt increment
+          continue;
+        }
       }
     }
 

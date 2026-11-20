@@ -33,6 +33,7 @@ import {
   saveLocalLocationPoint,
   saveLocalTriage,
   saveLocalVital,
+  linkUnlinkedVitalsToIncident,
   enqueueSync,
   getSyncStatusCounts,
   SyncStatusCounts
@@ -453,6 +454,9 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       };
       await saveLocalSession(updatedSession);
       await enqueueSync(Crypto.randomUUID(), 'hiking_sessions', 'update', updatedSession.id, updatedSession as unknown as Record<string, unknown>);
+
+      // Link any prior unlinked vitals recorded during this session to the incident and queue for sync
+      await linkUnlinkedVitalsToIncident(session.id, incident.id);
     }
 
     await enqueueSync(Crypto.randomUUID(), 'incidents', 'insert', incident.id, incident as unknown as Record<string, unknown>);
@@ -578,6 +582,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   // Vitals Recording (Camera PPG non-diagnostic)
   recordVitalReading: async (bpm: number, quality: number, isDemo = true): Promise<VitalReading> => {
     const incident = get().activeIncident;
+    const session = get().activeSession;
     const reading: VitalReading = {
       id: Crypto.randomUUID(),
       incident_id: incident?.id || '00000000-0000-0000-0000-000000000000',
@@ -588,8 +593,11 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       recorded_at: new Date().toISOString()
     };
 
-    // Always persist to local SQLite
-    await saveLocalVital(reading);
+    // Always persist to local SQLite with session_id if an active hike is monitored
+    await saveLocalVital({
+      ...reading,
+      session_id: session?.id
+    });
 
     // If an incident is active, queue for cloud synchronization.
     // If no incident is active, keep the vital reading local-only in SQLite to prevent FK constraint failures.
