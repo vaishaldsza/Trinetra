@@ -82,14 +82,21 @@ export default function LoginPage() {
 
         {/* Clear warning if Supabase is not configured */}
         {!isSupabaseConfigured && (
-          <div className="p-3.5 rounded-lg text-xs border bg-amber-950/60 border-amber-800 text-amber-200 space-y-1">
+          <div className="p-3.5 rounded-lg text-xs border bg-amber-950/60 border-amber-800 text-amber-200 space-y-2">
             <div className="font-bold flex items-center gap-1.5">
               <span>⚠️</span>
               <span>Supabase not configured</span>
             </div>
             <p className="text-[11px] text-amber-300/80">
-              Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment to authenticate users.
+              Running in Mock Admin Mode. You can explore the full operations dashboard without credentials.
             </p>
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard')}
+              className="w-full py-2 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition shadow-sm"
+            >
+              Enter Dashboard as Mock Admin →
+            </button>
           </div>
         )}
 
