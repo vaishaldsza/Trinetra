@@ -81,6 +81,7 @@ export const VitalReadingSchema = z.object({
   heart_rate_estimate: z.number().positive(),
   signal_quality: z.number().min(0).max(1),
   measurement_duration: z.number().positive(),
+  is_demo: z.boolean().default(true).optional(),
   recorded_at: z.string().datetime()
 });
 

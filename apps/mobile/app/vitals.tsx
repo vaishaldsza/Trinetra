@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { HEALTH_DISCLAIMER } from '@trinetra/shared';
 import { useSafetyStore } from '../src/store/safetyStore';
+import { processPpgSignal } from '../src/lib/ppg';
 
 export default function VitalsScreen() {
   const router = useRouter();
@@ -14,13 +15,30 @@ export default function VitalsScreen() {
   const [signalQuality, setSignalQuality] = useState<number | null>(null);
   const [pulseWavePhase, setPulseWavePhase] = useState(0);
 
-  // 30-second measurement cycle simulation
+  // Optical intensity sample buffer (30 Hz standard camera frame rate)
+  const opticalBufferRef = useRef<number[]>([]);
+
+  // 30-second measurement cycle
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
     let waveInterval: NodeJS.Timeout | null = null;
 
     if (isMeasuring && secondsRemaining > 0) {
       timer = setTimeout(() => {
+        // Collect 30 samples per second into the optical buffer
+        const elapsedSec = 30 - secondsRemaining;
+        const targetBpm = activeIncident ? 108 : 72;
+        const targetFreq = targetBpm / 60; // 1.8 Hz or 1.2 Hz
+
+        for (let i = 0; i < 30; i++) {
+          const t = elapsedSec + i / 30;
+          // Simulated red-channel finger absorption wave + mild noise
+          const cardiacWave = Math.sin(2 * Math.PI * targetFreq * t);
+          const baselineDrift = 0.08 * Math.sin(2 * Math.PI * 0.15 * t);
+          const noise = 0.04 * (Math.random() - 0.5);
+          opticalBufferRef.current.push(cardiacWave + baselineDrift + noise);
+        }
+
         setSecondsRemaining(secondsRemaining - 1);
       }, 1000);
 
@@ -28,20 +46,30 @@ export default function VitalsScreen() {
         setPulseWavePhase(p => (p + 1) % 10);
       }, 150);
     } else if (isMeasuring && secondsRemaining === 0) {
-      // Completed 30s measurement
+      // Completed 30s measurement: process pure PPG DSP pipeline
       setIsMeasuring(false);
-      const measuredBpm = activeIncident ? 112 : 76; // Elevated if trauma incident active
-      const quality = 0.91; // 91% signal quality
-      setEstimatedBpm(measuredBpm);
-      setSignalQuality(quality);
+      const ppgResult = processPpgSignal(opticalBufferRef.current, 30);
 
-      recordVitalReading(measuredBpm, quality).then(() => {
+      if (ppgResult.bpm !== null) {
+        setEstimatedBpm(ppgResult.bpm);
+        setSignalQuality(ppgResult.signalQuality);
+
+        recordVitalReading(ppgResult.bpm, ppgResult.signalQuality, true).then(() => {
+          Alert.alert(
+            'Measurement Complete',
+            `Computed Pulse: ${ppgResult.bpm} BPM (Signal Quality: ${(ppgResult.signalQuality * 100).toFixed(0)}%).\n\nSimulated [DEMO] - Saved to local SQLite record.`,
+            [{ text: 'OK' }]
+          );
+        });
+      } else {
+        setEstimatedBpm(null);
+        setSignalQuality(ppgResult.signalQuality);
         Alert.alert(
-          'Measurement Complete',
-          `Estimated Heart Rate: ${measuredBpm} BPM (Signal Quality: 91%).\n\nSaved to local SQLite record.`,
+          'Low Signal Quality',
+          'Could not detect a stable pulse rhythm. Please ensure your finger covers the sensor and hold steady.',
           [{ text: 'OK' }]
         );
-      });
+      }
     }
 
     return () => {
@@ -51,6 +79,7 @@ export default function VitalsScreen() {
   }, [isMeasuring, secondsRemaining, activeIncident, recordVitalReading]);
 
   const handleStartMeasurement = () => {
+    opticalBufferRef.current = [];
     setEstimatedBpm(null);
     setSignalQuality(null);
     setSecondsRemaining(30);
@@ -58,6 +87,7 @@ export default function VitalsScreen() {
   };
 
   const handleCancel = () => {
+    opticalBufferRef.current = [];
     setIsMeasuring(false);
     setSecondsRemaining(30);
   };
@@ -110,12 +140,17 @@ export default function VitalsScreen() {
           </View>
         ) : estimatedBpm !== null ? (
           <View style={styles.resultBox}>
-            <Text style={styles.resultLabel}>ESTIMATED PULSE</Text>
-            <Text style={styles.resultValue}>
-              {estimatedBpm} <Text style={styles.unitText}>BPM</Text>
-            </Text>
+            <Text style={styles.resultLabel}>COMPUTED PULSE (PPG DSP)</Text>
+            <View style={styles.bpmRow}>
+              <Text style={styles.resultValue}>
+                {estimatedBpm} <Text style={styles.unitText}>BPM</Text>
+              </Text>
+              <View style={styles.demoBadge}>
+                <Text style={styles.demoBadgeText}>Simulated [DEMO]</Text>
+              </View>
+            </View>
             <Text style={styles.qualityText}>
-              Signal Quality: {((signalQuality || 0.9) * 100).toFixed(0)}% · 30s Duration
+              Signal Quality: {((signalQuality || 0.9) * 100).toFixed(0)}% · 30s Optical DSP Duration
             </Text>
 
             <TouchableOpacity
@@ -257,11 +292,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5
   },
+  bpmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: 4
+  },
   resultValue: {
     fontSize: 54,
     fontWeight: '900',
-    color: '#F43F5E',
-    marginVertical: 6
+    color: '#F43F5E'
+  },
+  demoBadge: {
+    backgroundColor: '#78350F',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  demoBadgeText: {
+    color: '#FDE68A',
+    fontSize: 11,
+    fontWeight: '800'
   },
   unitText: {
     fontSize: 18,

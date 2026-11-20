@@ -10,7 +10,8 @@ import {
   IncidentStatus,
   IncidentType,
   DetectionSource,
-  LocationHistory
+  LocationHistory,
+  VitalReading
 } from '@trinetra/shared';
 
 export interface SyncQueueItem {
@@ -58,6 +59,7 @@ class MemoryStore {
   incidents = new Map<string, Incident>();
   locations: LocationHistory[] = [];
   triage = new Map<string, LocalTriageAssessment>();
+  vitals = new Map<string, VitalReading>();
   notifications = new Map<string, LocalNotificationRequest>();
   syncQueue: SyncQueueItem[] = [];
 }
@@ -195,6 +197,23 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
       );
 
       INSERT INTO schema_version (version, applied_at) VALUES (2, datetime('now'));
+    `);
+  }
+
+  // Migration 3: Vital readings (labeled non-diagnostic, carries is_demo)
+  if (currentVersion < 3) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS local_vital_readings (
+        id TEXT PRIMARY KEY,
+        incident_id TEXT NOT NULL,
+        heart_rate_estimate REAL NOT NULL,
+        signal_quality REAL NOT NULL DEFAULT 1.0,
+        measurement_duration REAL NOT NULL DEFAULT 30.0,
+        is_demo INTEGER NOT NULL DEFAULT 1,
+        recorded_at TEXT NOT NULL
+      );
+
+      INSERT INTO schema_version (version, applied_at) VALUES (3, datetime('now'));
     `);
   }
 }
@@ -458,6 +477,27 @@ export async function saveLocalTriage(triage: LocalTriageAssessment): Promise<vo
     );
   } else {
     memoryStore.triage.set(triage.id, triage);
+  }
+}
+
+export async function saveLocalVital(vital: VitalReading): Promise<void> {
+  const db = await getDb();
+  if (db) {
+    await db.runAsync(
+      `INSERT INTO local_vital_readings (id, incident_id, heart_rate_estimate, signal_quality, measurement_duration, is_demo, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [
+        vital.id,
+        vital.incident_id,
+        vital.heart_rate_estimate,
+        vital.signal_quality,
+        vital.measurement_duration,
+        vital.is_demo !== false ? 1 : 0,
+        vital.recorded_at
+      ]
+    );
+  } else {
+    memoryStore.vitals.set(vital.id, vital);
   }
 }
 

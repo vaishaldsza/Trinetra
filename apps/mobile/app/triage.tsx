@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Speech from 'expo-speech';
 import { useSafetyStore } from '../src/store/safetyStore';
 import { TriageInput, evaluateTriageRules, localTriageAssistant } from '../src/lib/triageEngine';
 
@@ -17,6 +18,47 @@ export default function TriageScreen() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
+  const [isVoiceGuidanceEnabled, setIsVoiceGuidanceEnabled] = useState(false);
+
+  const speakText = async (text: string) => {
+    if (!isVoiceGuidanceEnabled) return;
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(text);
+          window.speechSynthesis.speak(utterance);
+        }
+        return;
+      }
+      const speaking = await Speech.isSpeakingAsync();
+      if (speaking) {
+        await Speech.stop();
+      }
+      Speech.speak(text, {
+        language: 'en-US',
+        rate: 0.95
+      });
+    } catch {
+      // Gracefully ignored if speech engine is unavailable
+    }
+  };
+
+  const handleToggleVoice = () => {
+    const next = !isVoiceGuidanceEnabled;
+    setIsVoiceGuidanceEnabled(next);
+    if (next) {
+      speakText('Voice guidance enabled. Tap your answers below to complete emergency assessment.');
+    } else {
+      try {
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        } else {
+          Speech.stop();
+        }
+      } catch {}
+    }
+  };
 
   const triageInput: TriageInput = useMemo(() => ({
     consciousness,
@@ -42,6 +84,9 @@ export default function TriageScreen() {
       setPainLevel(8);
       setMobility('Immobilized');
       setInjuryLocation('Right leg and ankle');
+      if (isVoiceGuidanceEnabled) {
+        speakText('Transcript received. Critical warning signs detected. Review assessment below.');
+      }
     } finally {
       setIsTranscribing(false);
     }
@@ -58,7 +103,9 @@ export default function TriageScreen() {
           {
             text: 'View Incident Report',
             onPress: () => {
-              if (activeIncident) {
+              if (result.incident_id) {
+                router.push(`/incidents/${result.incident_id}`);
+              } else if (activeIncident) {
                 router.push(`/incidents/${activeIncident.id}`);
               } else {
                 router.push('/(tabs)/home');
@@ -131,11 +178,29 @@ export default function TriageScreen() {
 
       {/* Structured Questions Form */}
       <View style={styles.formSection}>
-        <Text style={styles.sectionHeading}>Structured Assessment Protocol</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>Structured Assessment Protocol</Text>
+          <TouchableOpacity
+            style={[styles.voiceGuidancePill, isVoiceGuidanceEnabled && styles.voiceGuidancePillActive]}
+            onPress={handleToggleVoice}
+          >
+            <Text style={styles.voiceGuidancePillText}>
+              {isVoiceGuidanceEnabled ? '🔊 Voice: ON' : '🔈 Voice: OFF'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {/* 1. Consciousness */}
         <View style={styles.questionBlock}>
-          <Text style={styles.questionTitle}>1. Are you conscious and able to respond?</Text>
+          <View style={styles.questionHeaderRow}>
+            <Text style={styles.questionTitle}>1. Are you conscious and able to respond?</Text>
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={() => speakText('Question 1. Are you conscious and able to respond? Select fully conscious, dazed or unresponsive.')}
+            >
+              <Text style={styles.speakButtonText}>🔊</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.optionsRow}>
             {(['Fully conscious', 'Dazed / Confused', 'Unresponsive'] as const).map((opt) => (
               <TouchableOpacity
@@ -151,7 +216,15 @@ export default function TriageScreen() {
 
         {/* 2. Breathing */}
         <View style={styles.questionBlock}>
-          <Text style={styles.questionTitle}>2. Are you experiencing breathing difficulty?</Text>
+          <View style={styles.questionHeaderRow}>
+            <Text style={styles.questionTitle}>2. Are you experiencing breathing difficulty?</Text>
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={() => speakText('Question 2. Are you experiencing breathing difficulty? Select normal breathing or labored shortness.')}
+            >
+              <Text style={styles.speakButtonText}>🔊</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.optionsRow}>
             <TouchableOpacity
               style={[styles.chip, !breathingDifficulty && styles.chipActive]}
@@ -170,7 +243,15 @@ export default function TriageScreen() {
 
         {/* 3. Bleeding */}
         <View style={styles.questionBlock}>
-          <Text style={styles.questionTitle}>3. Are you experiencing visible bleeding?</Text>
+          <View style={styles.questionHeaderRow}>
+            <Text style={styles.questionTitle}>3. Are you experiencing visible bleeding?</Text>
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={() => speakText('Question 3. Are you experiencing visible bleeding? Select none, minor abrasions, moderate, or severe bleeding.')}
+            >
+              <Text style={styles.speakButtonText}>🔊</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.optionsRow}>
             {(['None', 'Minor abrasions', 'Moderate', 'Severe bleeding'] as const).map((opt) => (
               <TouchableOpacity
@@ -189,7 +270,15 @@ export default function TriageScreen() {
 
         {/* 4. Injury Location */}
         <View style={styles.questionBlock}>
-          <Text style={styles.questionTitle}>4. Where are you injured?</Text>
+          <View style={styles.questionHeaderRow}>
+            <Text style={styles.questionTitle}>4. Where are you injured?</Text>
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={() => speakText('Question 4. Where are you injured? Enter the affected body areas.')}
+            >
+              <Text style={styles.speakButtonText}>🔊</Text>
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={styles.textInput}
             value={injuryLocation}
@@ -201,7 +290,15 @@ export default function TriageScreen() {
 
         {/* 5. Mobility */}
         <View style={styles.questionBlock}>
-          <Text style={styles.questionTitle}>5. Can you move and walk safely?</Text>
+          <View style={styles.questionHeaderRow}>
+            <Text style={styles.questionTitle}>5. Can you move and walk safely?</Text>
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={() => speakText('Question 5. Can you move and walk safely? Select full mobility, limited pain on walking, or immobilized.')}
+            >
+              <Text style={styles.speakButtonText}>🔊</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.optionsRow}>
             {(['Full mobility', 'Limited / Pain on walking', 'Immobilized'] as const).map((opt) => (
               <TouchableOpacity
@@ -221,7 +318,15 @@ export default function TriageScreen() {
         {/* 6. Pain Level (0 - 10) */}
         <View style={styles.questionBlock}>
           <View style={styles.painHeaderRow}>
-            <Text style={styles.questionTitle}>6. How severe is your pain (0 to 10)?</Text>
+            <View style={styles.questionHeaderRow}>
+              <Text style={styles.questionTitle}>6. How severe is your pain (0 to 10)?</Text>
+              <TouchableOpacity
+                style={styles.speakButton}
+                onPress={() => speakText('Question 6. How severe is your pain on a scale from 0 to 10?')}
+              >
+                <Text style={styles.speakButtonText}>🔊</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.painDisplay}>{painLevel} / 10</Text>
           </View>
           <View style={styles.painSelector}>
@@ -402,13 +507,50 @@ const styles = StyleSheet.create({
     borderColor: '#1E293B',
     marginBottom: 20
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16
+  },
   sectionHeading: {
     fontSize: 13,
     fontWeight: '700',
     color: '#F97316',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 16
+    letterSpacing: 0.5
+  },
+  voiceGuidancePill: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155'
+  },
+  voiceGuidancePillActive: {
+    backgroundColor: '#15803D',
+    borderColor: '#22C55E'
+  },
+  voiceGuidancePillText: {
+    color: '#F8FAFC',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  questionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  speakButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: '#1E293B',
+    borderRadius: 4
+  },
+  speakButtonText: {
+    fontSize: 14
   },
   questionBlock: {
     marginBottom: 18

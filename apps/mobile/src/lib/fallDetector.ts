@@ -11,7 +11,7 @@ enum DetectionState {
   OBSERVING_INACTIVITY = 'OBSERVING_INACTIVITY'
 }
 
-class FallDetector {
+export class FallDetector {
   private accelSubscription: { remove: () => void } | null = null;
   private gyroSubscription: { remove: () => void } | null = null;
   private isRunning = false;
@@ -21,6 +21,10 @@ class FallDetector {
   private freeFallStartTime: number | null = null;
   private impactTime: number | null = null;
   private postImpactMagnitudes: number[] = [];
+
+  public setCallback(callback: FallDetectionCallback): void {
+    this.onFallDetectedCallback = callback;
+  }
 
   public async isSensorAvailable(): Promise<boolean> {
     if (Platform.OS === 'web') return false;
@@ -86,9 +90,9 @@ class FallDetector {
     this.postImpactMagnitudes = [];
   }
 
-  private processAccelerometerSample(x: number, y: number, z: number): void {
+  public processAccelerometerSample(x: number, y: number, z: number, timestampMs?: number): void {
     const magnitude = Math.sqrt(x * x + y * y + z * z);
-    const now = Date.now();
+    const now = timestampMs ?? Date.now();
 
     switch (this.state) {
       case DetectionState.IDLE:

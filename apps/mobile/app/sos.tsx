@@ -1,12 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafetyStore } from '../src/store/safetyStore';
 
 export default function SOSScreen() {
   const router = useRouter();
+  const { immediate, skipCountdown } = useLocalSearchParams<{ immediate?: string; skipCountdown?: string }>();
+  const shouldSkipCountdown = immediate === 'true' || skipCountdown === 'true';
+
   const { activeIncident, triggerSOS, cancelSOS, lastKnownLocation } = useSafetyStore();
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  // If navigated with skipCountdown/immediate parameter, immediately trigger SOS without hold or countdown
+  useEffect(() => {
+    if (shouldSkipCountdown && !activeIncident) {
+      triggerSOS();
+    }
+  }, [shouldSkipCountdown, activeIncident, triggerSOS]);
 
   // Hold-to-confirm (~2s hold) state
   const [holdProgress, setHoldProgress] = useState<number>(0);

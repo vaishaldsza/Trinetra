@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Vibration } from 'react-native';
 import { useRouter } from 'expo-router';
 import { DEMO_BANNER_LABEL } from '@trinetra/shared';
 import { useSafetyStore } from '../store/safetyStore';
@@ -14,19 +14,61 @@ export function FallAlertModal() {
     confirmFallSOS
   } = useSafetyStore();
 
+  const isHandlingExpiryRef = useRef(false);
+
   useEffect(() => {
-    if (!showFallAlertModal) return;
-    const interval = setInterval(() => {
-      decrementFallCountdown();
+    if (!showFallAlertModal) {
+      isHandlingExpiryRef.current = false;
+      return;
+    }
+
+    // Start repeating vibration pattern [500ms vibrate, 500ms pause]
+    const VIBRATION_PATTERN = [500, 500];
+    try {
+      Vibration.vibrate(VIBRATION_PATTERN, true);
+    } catch {
+      // Gracefully handled if Vibration is unavailable (e.g. web)
+    }
+
+    const interval = setInterval(async () => {
+      const current = useSafetyStore.getState().fallCountdownSeconds;
+      if (current !== null && current <= 1 && !isHandlingExpiryRef.current) {
+        isHandlingExpiryRef.current = true;
+        clearInterval(interval);
+        try {
+          Vibration.cancel();
+        } catch {}
+        const incident = await confirmFallSOS();
+        router.push(`/incidents/${incident.id}`);
+      } else {
+        decrementFallCountdown();
+      }
     }, 1000);
-    return () => clearInterval(interval);
-  }, [showFallAlertModal, decrementFallCountdown]);
+
+    return () => {
+      clearInterval(interval);
+      try {
+        Vibration.cancel();
+      } catch {}
+    };
+  }, [showFallAlertModal, decrementFallCountdown, confirmFallSOS, router]);
 
   if (!showFallAlertModal) return null;
 
   const handleConfirm = async () => {
-    await confirmFallSOS();
-    router.push('/sos');
+    try {
+      Vibration.cancel();
+    } catch {}
+    const incident = await confirmFallSOS();
+    // Confirmed fall skips secondary countdown and routes straight to active incident
+    router.push(`/incidents/${incident.id}`);
+  };
+
+  const handleDismiss = () => {
+    try {
+      Vibration.cancel();
+    } catch {}
+    dismissFallAlert();
   };
 
   return (
@@ -34,7 +76,7 @@ export function FallAlertModal() {
       visible={showFallAlertModal}
       transparent
       animationType="fade"
-      onRequestClose={dismissFallAlert}
+      onRequestClose={handleDismiss}
     >
       <View style={styles.overlay}>
         <View style={styles.card}>
@@ -68,7 +110,7 @@ export function FallAlertModal() {
 
             <TouchableOpacity
               style={styles.dismissButton}
-              onPress={dismissFallAlert}
+              onPress={handleDismiss}
               activeOpacity={0.8}
             >
               <Text style={styles.dismissButtonText}>✓ I AM OK (CANCEL ALERT)</Text>

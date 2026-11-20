@@ -32,6 +32,7 @@ import {
   getLocalIncidents,
   saveLocalLocationPoint,
   saveLocalTriage,
+  saveLocalVital,
   enqueueSync,
   getSyncStatusCounts,
   SyncStatusCounts
@@ -87,14 +88,14 @@ interface SafetyState {
 
   // Fall Detection Actions
   onFallDetected: () => void;
-  confirmFallSOS: () => Promise<void>;
+  confirmFallSOS: () => Promise<Incident>;
   dismissFallAlert: () => void;
   simulateFallEvent: () => void;
   decrementFallCountdown: () => void;
 
   // Triage & Vitals
   submitTriage: (input: TriageInput) => Promise<TriageAssessment>;
-  recordVitalReading: (bpm: number, quality: number) => Promise<VitalReading>;
+  recordVitalReading: (bpm: number, quality: number, isDemo?: boolean) => Promise<VitalReading>;
 }
 
 const DEFAULT_USER_ID = 'a0000000-0000-0000-0000-000000000001';
@@ -499,9 +500,9 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
     });
   },
 
-  confirmFallSOS: async () => {
+  confirmFallSOS: async (): Promise<Incident> => {
     // Reuses the existing SOS creation path, setting detection_source = fall
-    await get().triggerSOS(DetectionSource.ACCELEROMETER, IncidentType.FALL_DETECTED);
+    return await get().triggerSOS(DetectionSource.ACCELEROMETER, IncidentType.FALL_DETECTED);
   },
 
   dismissFallAlert: () => {
@@ -528,9 +529,14 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
 
   // Triage Submission
   submitTriage: async (input: TriageInput): Promise<TriageAssessment> => {
-    const incident = get().activeIncident;
+    let incident = get().activeIncident;
     const ruleEvaluation = evaluateTriageRules(input);
     const summary = await localTriageAssistant.generateStructuredSummary(input);
+
+    // If critical triage result and no incident is currently active, immediately create an incident
+    if (!incident && ruleEvaluation.priority === IncidentPriority.CRITICAL) {
+      incident = await get().triggerSOS(DetectionSource.SYSTEM, IncidentType.HEALTH_ANOMALY);
+    }
 
     const triageRecord: TriageAssessment = {
       id: Crypto.randomUUID(),
@@ -558,6 +564,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
         priority: ruleEvaluation.priority
       };
       await saveLocalIncident(updatedIncident);
+      await enqueueSync(Crypto.randomUUID(), 'incidents', 'update', updatedIncident.id, updatedIncident as unknown as Record<string, unknown>);
       set({ activeIncident: updatedIncident });
     }
 
@@ -569,7 +576,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   },
 
   // Vitals Recording (Camera PPG non-diagnostic)
-  recordVitalReading: async (bpm: number, quality: number): Promise<VitalReading> => {
+  recordVitalReading: async (bpm: number, quality: number, isDemo = true): Promise<VitalReading> => {
     const incident = get().activeIncident;
     const reading: VitalReading = {
       id: Crypto.randomUUID(),
@@ -577,9 +584,11 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       heart_rate_estimate: bpm,
       signal_quality: quality,
       measurement_duration: 30.0,
+      is_demo: isDemo,
       recorded_at: new Date().toISOString()
     };
 
+    await saveLocalVital(reading);
     await enqueueSync(Crypto.randomUUID(), 'vital_readings', 'insert', reading.id, reading as unknown as Record<string, unknown>);
     const counts = await getSyncStatusCounts();
     set({ syncCounts: counts });
