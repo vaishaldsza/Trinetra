@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { dataProvider } from '../../lib/dataProvider';
+import { IncidentWithRelations, IncidentPriority, DetectionSource } from '@trinetra/shared';
 import {
   BarChart,
   Bar,
@@ -16,35 +18,154 @@ import {
   Line,
   Legend
 } from 'recharts';
-import { BarChart3, TrendingUp, Zap, Shield, HeartPulse, CheckCircle2 } from 'lucide-react';
-
-const PRIORITY_DATA = [
-  { name: 'Critical', count: 4, fill: '#ef4444' },
-  { name: 'High', count: 6, fill: '#f97316' },
-  { name: 'Medium', count: 5, fill: '#eab308' },
-  { name: 'Low', count: 2, fill: '#3b82f6' }
-];
-
-const SOURCE_DISTRIBUTION = [
-  { name: 'Fall Detector', value: 45, color: '#f97316' },
-  { name: 'Manual SOS', value: 30, color: '#ef4444' },
-  { name: 'PPG Vital Anomaly', value: 15, color: '#ec4899' },
-  { name: 'Audio Distress', value: 10, color: '#8b5cf6' }
-];
-
-const HOURLY_INCIDENTS = [
-  { time: '04:00', count: 1 },
-  { time: '06:00', count: 3 },
-  { time: '08:00', count: 7 },
-  { time: '10:00', count: 12 },
-  { time: '12:00', count: 9 },
-  { time: '14:00', count: 14 },
-  { time: '16:00', count: 8 },
-  { time: '18:00', count: 4 },
-  { time: '20:00', count: 2 }
-];
+import { BarChart3, TrendingUp, RefreshCw, AlertCircle, HeartPulse, ShieldAlert, Clock, Activity } from 'lucide-react';
 
 export default function AnalyticsPage() {
+  const [incidents, setIncidents] = useState<IncidentWithRelations[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAnalyticsData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await dataProvider.getIncidents({ demoOnly: 'ALL' });
+      setIncidents(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to compute analytics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAnalyticsData();
+  }, []);
+
+  // 1. Compute Priority Breakdown from real incident data
+  const priorityData = [
+    {
+      name: 'Critical',
+      count: incidents.filter((i) => i.priority === IncidentPriority.CRITICAL).length,
+      fill: '#ef4444'
+    },
+    {
+      name: 'High',
+      count: incidents.filter((i) => i.priority === IncidentPriority.HIGH).length,
+      fill: '#f97316'
+    },
+    {
+      name: 'Medium',
+      count: incidents.filter((i) => i.priority === IncidentPriority.MEDIUM).length,
+      fill: '#eab308'
+    },
+    {
+      name: 'Low',
+      count: incidents.filter((i) => i.priority === IncidentPriority.LOW).length,
+      fill: '#3b82f6'
+    }
+  ];
+
+  // 2. Compute Detection Source Breakdown from real incident data
+  const sourceCounts: Record<string, number> = {
+    'Fall Detector': 0,
+    'Manual SOS': 0,
+    'PPG Vital Anomaly': 0,
+    'Audio Distress': 0,
+    'System / Other': 0
+  };
+
+  incidents.forEach((inc) => {
+    switch (inc.detection_source) {
+      case DetectionSource.ACCELEROMETER:
+        sourceCounts['Fall Detector']++;
+        break;
+      case DetectionSource.MANUAL:
+        sourceCounts['Manual SOS']++;
+        break;
+      case DetectionSource.VITAL_MONITOR:
+        sourceCounts['PPG Vital Anomaly']++;
+        break;
+      case DetectionSource.AUDIO_YAMNET:
+        sourceCounts['Audio Distress']++;
+        break;
+      default:
+        sourceCounts['System / Other']++;
+        break;
+    }
+  });
+
+  const sourceData = [
+    { name: 'Fall Detector', value: sourceCounts['Fall Detector'], color: '#f97316' },
+    { name: 'Manual SOS', value: sourceCounts['Manual SOS'], color: '#ef4444' },
+    { name: 'PPG Vital Anomaly', value: sourceCounts['PPG Vital Anomaly'], color: '#ec4899' },
+    { name: 'Audio Distress', value: sourceCounts['Audio Distress'], color: '#8b5cf6' },
+    { name: 'System / Other', value: sourceCounts['System / Other'], color: '#64748b' }
+  ].filter((s) => s.value > 0);
+
+  // 3. Compute Hourly Incident Distribution from real incident data
+  const hourlyBuckets: Record<string, number> = {};
+  for (let h = 0; h < 24; h += 2) {
+    const label = `${String(h).padStart(2, '0')}:00`;
+    hourlyBuckets[label] = 0;
+  }
+
+  incidents.forEach((inc) => {
+    if (inc.created_at) {
+      const hour = new Date(inc.created_at).getHours();
+      const bucketHour = Math.floor(hour / 2) * 2;
+      const label = `${String(bucketHour).padStart(2, '0')}:00`;
+      if (hourlyBuckets[label] !== undefined) {
+        hourlyBuckets[label]++;
+      }
+    }
+  });
+
+  const hourlyData = Object.entries(hourlyBuckets).map(([time, count]) => ({
+    time,
+    count
+  }));
+
+  // 4. Compute Average Pulse BPM from real vital readings
+  const allVitals = incidents.flatMap((i) => i.vital_readings || []);
+  const avgPulse =
+    allVitals.length > 0
+      ? Math.round(allVitals.reduce((acc, v) => acc + (v.heart_rate_estimate || 0), 0) / allVitals.length)
+      : 0;
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-6 py-6 animate-pulse">
+        <div className="h-10 w-64 bg-slate-800 rounded-lg" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 bg-slate-800/60 rounded-2xl" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="h-72 bg-slate-800/40 rounded-2xl" />
+          <div className="h-72 bg-slate-800/40 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-900/50 bg-red-950/20 p-8 flex flex-col items-center justify-center gap-3 text-center my-8">
+        <AlertCircle className="w-8 h-8 text-red-400" />
+        <h3 className="text-base font-bold text-white">Analytics Unavailable</h3>
+        <p className="text-xs text-red-300/80 max-w-sm">{error}</p>
+        <button
+          onClick={fetchAnalyticsData}
+          className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-bold text-white transition shadow-sm"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Retry Analytics
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-8 py-4 sm:py-6">
       {/* Title */}
@@ -55,54 +176,83 @@ export default function AnalyticsPage() {
             Safety Analytics & SAR Telemetry
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Historical incident distributions, sensor detection accuracy, and mountain rescue response velocity.
+            Aggregated metrics computed dynamically from active incident logs and on-trail telemetry.
           </p>
         </div>
 
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-semibold">
-          <TrendingUp className="w-4 h-4" />
-          Analytics Engine Online
-        </div>
+        <button
+          onClick={fetchAnalyticsData}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Recompute
+        </button>
       </div>
 
-      {/* KPI Cards */}
+      {/* Primary KPI Cards (Computed from data + clearly labeled illustrative demo stats) */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between">
-          <span className="text-xs text-slate-400 font-semibold uppercase">Mean Time to Coordinate</span>
-          <div className="mt-2 text-3xl font-black text-emerald-400">42s</div>
-          <span className="mt-2 text-[11px] text-slate-400">Autonomous 5-agent mesh execution</span>
+        {/* KPI 1: Computed from data */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-semibold uppercase">Total Incidents</span>
+            <ShieldAlert className="w-4 h-4 text-orange-400" />
+          </div>
+          <div className="mt-2 text-3xl font-black text-white">{incidents.length}</div>
+          <span className="mt-2 text-[11px] text-slate-400">Computed from incident records</span>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between">
-          <span className="text-xs text-slate-400 font-semibold uppercase">Sensor Precision</span>
-          <div className="mt-2 text-3xl font-black text-orange-400">96.8%</div>
-          <span className="mt-2 text-[11px] text-slate-400">Tri-axial impact & inactivity validation</span>
+        {/* KPI 2: Computed from data */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-semibold uppercase">Critical Share</span>
+            <TrendingUp className="w-4 h-4 text-red-400" />
+          </div>
+          <div className="mt-2 text-3xl font-black text-red-400">
+            {incidents.length > 0
+              ? `${Math.round((incidents.filter((i) => i.priority === IncidentPriority.CRITICAL).length / incidents.length) * 100)}%`
+              : '0%'}
+          </div>
+          <span className="mt-2 text-[11px] text-slate-400">Proportion of critical events</span>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between">
-          <span className="text-xs text-slate-400 font-semibold uppercase">PPG Signal Quality</span>
-          <div className="mt-2 text-3xl font-black text-cyan-400">0.91</div>
-          <span className="mt-2 text-[11px] text-slate-400">Bandpass filtered optical pulse estimate</span>
+        {/* KPI 3: Computed from data */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-semibold uppercase">Avg Pulse in Distress</span>
+            <HeartPulse className="w-4 h-4 text-red-400" />
+          </div>
+          <div className="mt-2 text-3xl font-black text-white">
+            {avgPulse > 0 ? `${avgPulse} BPM` : 'N/A'}
+          </div>
+          <span className="mt-2 text-[11px] text-slate-400">Non-diagnostic camera estimate</span>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between">
-          <span className="text-xs text-slate-400 font-semibold uppercase">Dispatch Reliability</span>
-          <div className="mt-2 text-3xl font-black text-white">99.4%</div>
-          <span className="mt-2 text-[11px] text-slate-400">Twilio SMS & voice synthesized retries</span>
+        {/* KPI 4: Illustrative metric (labeled clearly per requirements) */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-semibold uppercase">Mean Coordination Time</span>
+            <Clock className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="mt-2 text-3xl font-black text-cyan-400">~45s</div>
+          <span className="mt-2 text-[10px] font-bold text-amber-400 uppercase">
+            [DEMO] illustrative
+          </span>
         </div>
       </section>
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Chart 1: Incidents by Priority */}
+        {/* Chart 1: Computed Incidents by Priority */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4">
-          <h3 className="font-bold text-white text-base">Incidents by Priority Severity</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-white text-base">Incidents by Priority</h3>
+            <span className="text-[10px] font-mono text-slate-400">Computed live</span>
+          </div>
           <div className="w-full h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={PRIORITY_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={priorityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} />
+                <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
                 />
@@ -112,47 +262,57 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Chart 2: Detection Source Breakdown */}
+        {/* Chart 2: Computed Detection Source Breakdown */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4">
-          <h3 className="font-bold text-white text-base">Distress Detection Source Breakdown</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-white text-base">Detection Source Breakdown</h3>
+            <span className="text-[10px] font-mono text-slate-400">Computed live</span>
+          </div>
           <div className="w-full h-64 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={SOURCE_DISTRIBUTION}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={85}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {SOURCE_DISTRIBUTION.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  formatter={(value) => <span style={{ color: '#cbd5e1', fontSize: '11px' }}>{value}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            {sourceData.length === 0 ? (
+              <span className="text-xs text-slate-400">No incident sources to display</span>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={sourceData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {sourceData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    formatter={(value) => <span style={{ color: '#cbd5e1', fontSize: '11px' }}>{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
-        {/* Chart 3: Hourly Activity Timeline */}
+        {/* Chart 3: Hourly Distribution */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4 lg:col-span-2">
-          <h3 className="font-bold text-white text-base">Diurnal Incident Occurrence (Mountain Time)</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-white text-base">Diurnal Incident Distribution by Hour</h3>
+            <span className="text-[10px] font-mono text-slate-400">Computed from timestamps</span>
+          </div>
           <div className="w-full h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={HOURLY_INCIDENTS} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <LineChart data={hourlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="time" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} />
+                <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
                 />

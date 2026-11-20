@@ -60,12 +60,23 @@ const AGENTS_DIRECTORY: AgentInfo[] = [
 export default function AgentsPage() {
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const t = await dataProvider.getAgentTasks();
+      setTasks(t);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch agent tasks');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    dataProvider.getAgentTasks().then((t) => {
-      setTasks(t);
-      setLoading(false);
-    });
+    fetchTasks();
   }, []);
 
   return (
@@ -138,7 +149,18 @@ export default function AgentsPage() {
           Recent Agent Task Execution History
         </h2>
 
-        {loading ? (
+        {error ? (
+          <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-6 text-center flex flex-col items-center gap-2">
+            <AlertCircle className="w-6 h-6 text-rose-400" />
+            <p className="text-xs text-slate-300">{error}</p>
+            <button
+              onClick={fetchTasks}
+              className="mt-1 px-3 py-1 bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs rounded transition"
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
           <div className="flex flex-col gap-3">
             {[1, 2, 3].map((i) => (
               <div key={i} className="h-16 bg-slate-800/60 rounded-xl animate-pulse" />

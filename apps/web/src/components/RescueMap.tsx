@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
+import { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { dataProvider, HospitalPoint, RescueAccessPoint, HikerSummary } from '../lib/dataProvider';
 import { IncidentWithRelations, IncidentPriority, IncidentStatus } from '@trinetra/shared';
-import { MapPin, AlertTriangle, Cross, Shield, Users, ArrowRight } from 'lucide-react';
+import { AlertTriangle, Compass, Layers, RefreshCw, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 // Component to handle programmatic map center panning
@@ -84,17 +84,30 @@ export default function RescueMap() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([32.24, 77.18]);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
 
+  // Requirement: Plain OpenStreetMap as default, with CARTO dark theme option
+  const [tileTheme, setTileTheme] = useState<'osm' | 'carto'>('osm');
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const loadMapData = async () => {
-    const [incs, hks, hsps, raps] = await Promise.all([
-      dataProvider.getIncidents({ demoOnly: 'ALL' }),
-      dataProvider.getHikers(),
-      dataProvider.getHospitals(),
-      dataProvider.getRescueAccessPoints()
-    ]);
-    setIncidents(incs);
-    setHikers(hks);
-    setHospitals(hsps);
-    setRescuePoints(raps);
+    try {
+      setError(null);
+      const [incs, hks, hsps, raps] = await Promise.all([
+        dataProvider.getIncidents({ demoOnly: 'ALL' }),
+        dataProvider.getHikers(),
+        dataProvider.getHospitals(),
+        dataProvider.getRescueAccessPoints()
+      ]);
+      setIncidents(incs);
+      setHikers(hks);
+      setHospitals(hsps);
+      setRescuePoints(raps);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load map telemetry data');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -117,6 +130,31 @@ export default function RescueMap() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="w-full h-[calc(100vh-180px)] min-h-[500px] rounded-2xl border border-slate-800 bg-slate-950 flex flex-col items-center justify-center gap-3">
+        <Compass className="w-8 h-8 text-orange-500 animate-spin" />
+        <span className="text-sm font-semibold text-slate-300">Loading Map Telemetry & Geodata...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full h-[calc(100vh-180px)] min-h-[500px] rounded-2xl border border-red-900/50 bg-red-950/20 p-8 flex flex-col items-center justify-center gap-3 text-center">
+        <AlertCircle className="w-8 h-8 text-red-400" />
+        <span className="text-sm font-bold text-white">Map Data Unavailable</span>
+        <p className="text-xs text-red-300/80 max-w-sm">{error}</p>
+        <button
+          onClick={loadMapData}
+          className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-bold text-white transition shadow-sm"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Retry Loading Map
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-[calc(100vh-180px)] min-h-[500px] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 flex flex-col md:flex-row shadow-2xl">
       {/* Sidebar: Incident Telemetry Directory */}
@@ -129,6 +167,35 @@ export default function RescueMap() {
           <span className="text-[11px] font-mono text-slate-400">
             {incidents.length} Incidents
           </span>
+        </div>
+
+        {/* Tile Provider Layer Toggle */}
+        <div className="flex items-center justify-between bg-slate-950/70 border border-slate-800 p-2 rounded-xl text-xs">
+          <span className="text-slate-400 font-medium flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-orange-400" /> Base Layer:
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setTileTheme('osm')}
+              className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
+                tileTheme === 'osm'
+                  ? 'bg-orange-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              OSM (Default)
+            </button>
+            <button
+              onClick={() => setTileTheme('carto')}
+              className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
+                tileTheme === 'carto'
+                  ? 'bg-orange-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              CARTO Dark
+            </button>
+          </div>
         </div>
 
         {/* Legend */}
@@ -156,33 +223,39 @@ export default function RescueMap() {
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
             Focus Incident Location:
           </span>
-          {incidents.map((inc) => (
-            <button
-              key={inc.id}
-              onClick={() => handleSelectIncident(inc)}
-              className={`text-left p-3 rounded-xl border transition flex flex-col gap-1 ${
-                selectedIncidentId === inc.id
-                  ? 'border-orange-500 bg-orange-500/10'
-                  : 'border-slate-800 bg-slate-950/70 hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-white">
-                  {inc.profile?.full_name || 'Hiker'}
-                </span>
-                <span
-                  className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                    inc.priority === IncidentPriority.CRITICAL ? 'bg-red-950 text-red-400' : 'bg-orange-950 text-orange-400'
-                  }`}
-                >
-                  {inc.priority}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 line-clamp-1">
-                {(inc.hiking_session?.start_location as any)?.trail || 'Trail Area'} · {inc.detection_source}
-              </p>
-            </button>
-          ))}
+          {incidents.length === 0 ? (
+            <div className="text-center py-6 text-xs text-slate-400">
+              No active incidents in this sector.
+            </div>
+          ) : (
+            incidents.map((inc) => (
+              <button
+                key={inc.id}
+                onClick={() => handleSelectIncident(inc)}
+                className={`text-left p-3 rounded-xl border transition flex flex-col gap-1 ${
+                  selectedIncidentId === inc.id
+                    ? 'border-orange-500 bg-orange-500/10'
+                    : 'border-slate-800 bg-slate-950/70 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-white">
+                    {inc.profile?.full_name || 'Hiker'}
+                  </span>
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                      inc.priority === IncidentPriority.CRITICAL ? 'bg-red-950 text-red-400' : 'bg-orange-950 text-orange-400'
+                    }`}
+                  >
+                    {inc.priority}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 line-clamp-1">
+                  {(inc.hiking_session?.start_location as any)?.trail || 'Trail Area'} · {inc.detection_source}
+                </p>
+              </button>
+            ))
+          )}
         </div>
       </div>
 
@@ -196,11 +269,18 @@ export default function RescueMap() {
         >
           <MapController center={mapCenter} />
 
-          {/* CartoDB Dark Matter Tiles for crisp modern night tactical theme */}
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          />
+          {/* Tile Layers with proper attribution */}
+          {tileTheme === 'osm' ? (
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+          ) : (
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            />
+          )}
 
           {/* Incidents Markers */}
           {incidents.map((inc) => {

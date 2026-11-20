@@ -26,16 +26,20 @@ export default function DashboardPage() {
   const [liveEvents, setLiveEvents] = useState<DataUpdateEvent[]>([]);
   const [isSimulating, setIsSimulating] = useState(dataProvider.isRealtimeSimulationActive());
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Load initial data
   const loadData = async () => {
     try {
+      setError(null);
       const [s, incs] = await Promise.all([
         dataProvider.getStats(),
         dataProvider.getIncidents({ demoOnly: 'ALL' })
       ]);
       setStats(s);
       setRecentIncidents(incs.slice(0, 5));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load telemetry data');
     } finally {
       setLoading(false);
     }
@@ -78,6 +82,24 @@ export default function DashboardPage() {
           ))}
         </div>
         <div className="h-64 bg-slate-800/40 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+        <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-full text-rose-400 mb-4">
+          <AlertTriangle className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">Unable to load telemetry</h2>
+        <p className="text-sm text-slate-400 max-w-md mb-6">{error}</p>
+        <button
+          onClick={loadData}
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-medium text-sm rounded-lg transition"
+        >
+          Retry Connection
+        </button>
       </div>
     );
   }

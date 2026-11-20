@@ -33,13 +33,24 @@ export default function IncidentDetailPage() {
 
   const [incident, setIncident] = useState<IncidentWithRelations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchIncident = async () => {
+    if (!incidentId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await dataProvider.getIncident(incidentId);
+      setIncident(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load incident record');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!incidentId) return;
-    dataProvider.getIncident(incidentId).then((data) => {
-      setIncident(data);
-      setLoading(false);
-    });
+    fetchIncident();
   }, [incidentId]);
 
   if (loading) {
@@ -50,6 +61,31 @@ export default function IncidentDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="h-64 bg-slate-800/40 rounded-2xl" />
           <div className="h-64 bg-slate-800/40 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-12 text-center flex flex-col items-center gap-4 my-8">
+        <AlertTriangle className="w-12 h-12 text-rose-400" />
+        <h2 className="text-xl font-bold text-white">Error Loading Incident</h2>
+        <p className="text-sm text-slate-400 max-w-sm">{error}</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={fetchIncident}
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs rounded-lg transition"
+          >
+            Retry
+          </button>
+          <Link
+            href="/incidents"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Incidents Log
+          </Link>
         </div>
       </div>
     );

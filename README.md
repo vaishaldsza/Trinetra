@@ -104,6 +104,12 @@ supabase functions deploy retry-notifications
 
 ---
 
+## Security & Route Protection
+- **Authoritative Enforcement via PostgreSQL Row Level Security (RLS):** While the web dashboard applies client route guards for navigation flow and filters views so that non-admins see only their own incidents, PostgreSQL Row Level Security (RLS) policies on Supabase are the real, authoritative source of data protection and security enforcement. Unauthenticated or non-admin API requests cannot read or modify unauthorized database rows regardless of client-side state.
+- **Mock Admin Mode:** When Supabase environment variables are omitted, the web dashboard runs locally in Mock Admin Mode, populated with seeded demonstration incidents and telemetry streams without requiring live cloud credentials.
+
+---
+
 ## Safety & Non-Diagnostic Notice
 - **Non-Diagnostic:** Health estimates (PPG camera pulse readings) are experimental estimates and must not be used as clinical diagnostic devices.
 - **Immediate Escalation:** Critical emergency workflows never wait on cloud connectivity, external LLMs, or agent execution.

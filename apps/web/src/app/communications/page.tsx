@@ -10,12 +10,16 @@ export default function CommunicationsPage() {
   const [channelFilter, setChannelFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchNotifications = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await dataProvider.getNotifications();
       setNotifications(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch communication logs');
     } finally {
       setLoading(false);
     }
@@ -92,7 +96,19 @@ export default function CommunicationsPage() {
       </div>
 
       {/* Communications Dispatches Table */}
-      {loading ? (
+      {error ? (
+        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-10 text-center flex flex-col items-center gap-3">
+          <AlertCircle className="w-10 h-10 text-rose-400" />
+          <h3 className="text-base font-bold text-white">Error Loading Communications</h3>
+          <p className="text-sm text-slate-400 max-w-sm">{error}</p>
+          <button
+            onClick={fetchNotifications}
+            className="mt-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs rounded-lg transition"
+          >
+            Retry
+          </button>
+        </div>
+      ) : loading ? (
         <div className="flex flex-col gap-3">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-16 bg-slate-900/60 rounded-xl animate-pulse" />

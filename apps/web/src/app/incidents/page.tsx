@@ -14,6 +14,7 @@ import { Search, Filter, ShieldAlert, ArrowRight, Eye, RefreshCw } from 'lucide-
 export default function IncidentsListPage() {
   const [incidents, setIncidents] = useState<IncidentWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<IncidentStatus | 'ALL'>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<IncidentPriority | 'ALL'>('ALL');
@@ -23,6 +24,7 @@ export default function IncidentsListPage() {
 
   const fetchIncidents = async () => {
     setLoading(true);
+    setError(null);
     try {
       const filters: IncidentFilters = {
         status: statusFilter,
@@ -33,6 +35,8 @@ export default function IncidentsListPage() {
       };
       const data = await dataProvider.getIncidents(filters);
       setIncidents(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch incident log');
     } finally {
       setLoading(false);
     }
@@ -152,7 +156,19 @@ export default function IncidentsListPage() {
       </div>
 
       {/* Incidents List Table / Card View */}
-      {loading ? (
+      {error ? (
+        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-10 text-center flex flex-col items-center gap-3">
+          <ShieldAlert className="w-10 h-10 text-rose-400" />
+          <h3 className="text-base font-bold text-white">Error Loading Incidents</h3>
+          <p className="text-sm text-slate-400 max-w-sm">{error}</p>
+          <button
+            onClick={fetchIncidents}
+            className="mt-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs rounded-lg transition"
+          >
+            Retry
+          </button>
+        </div>
+      ) : loading ? (
         <div className="flex flex-col gap-3">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-20 bg-slate-900/60 rounded-xl animate-pulse" />

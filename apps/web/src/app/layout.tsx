@@ -3,6 +3,7 @@ import Link from 'next/link';
 import './globals.css';
 import { APP_NAME, APP_TAGLINE, DEMO_BANNER_LABEL } from '@trinetra/shared';
 import { isSupabaseConfigured } from '../lib/supabase';
+import RouteGuard from '../components/RouteGuard';
 
 export const metadata: Metadata = {
   title: `${APP_NAME} - Outdoor Safety & Emergency Response Dashboard`,
@@ -24,9 +25,9 @@ export default function RootLayout({
           <aside aria-label="Mock Admin Mode Banner" className="bg-amber-500 text-slate-950 px-4 py-1.5 text-xs font-bold tracking-wide flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-2">
               <span className="bg-slate-950 text-amber-400 px-2 py-0.5 rounded text-[10px] uppercase font-black">
-                MOCK ADMIN
+                MOCK / DEMO
               </span>
-              <span>Supabase not configured — Running in Mock Admin Mode with full dashboard access & simulated live feed.</span>
+              <span>Supabase not configured — Running in Mock Admin Mode with full dashboard access & simulated live telemetry.</span>
             </div>
             <span className="hidden sm:inline text-[11px] font-mono opacity-80">v1.0-mvp</span>
           </aside>
@@ -118,7 +119,9 @@ export default function RootLayout({
 
         {/* Main View Area */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-          {children}
+          <RouteGuard>
+            {children}
+          </RouteGuard>
         </main>
 
         {/* Footer */}
