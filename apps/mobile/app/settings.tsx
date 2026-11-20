@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Switch } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafetyStore } from '../src/store/safetyStore';
 import { getFailedSyncItems, SyncQueueItem } from '../src/lib/db';
 
 export default function SettingsScreen() {
-  const { profile, updateProfile, syncCounts, syncNow, isSyncing } = useSafetyStore();
+  const router = useRouter();
+  const {
+    profile,
+    updateProfile,
+    syncCounts,
+    syncNow,
+    isSyncing,
+    isDemoMode,
+    toggleDemoMode,
+    resetDemoData
+  } = useSafetyStore();
   const [fullName, setFullName] = useState(profile.full_name);
   const [phone, setPhone] = useState(profile.phone || '');
   const [isEditing, setIsEditing] = useState(false);
   const [failedItems, setFailedItems] = useState<SyncQueueItem[]>([]);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     getFailedSyncItems().then(setFailedItems).catch(() => {});
@@ -26,6 +38,31 @@ export default function SettingsScreen() {
     }
     setIsEditing(false);
     Alert.alert('Profile Saved', 'Profile updated locally in SQLite and queued for cloud sync.');
+  };
+
+  const handleResetDemo = () => {
+    Alert.alert(
+      'Reset Demo Data',
+      'This will delete all simulated demo incidents, demo vitals, and demo triage assessments from offline SQLite. Real logs will remain completely intact.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Demo Data',
+          style: 'destructive',
+          onPress: async () => {
+            setIsResetting(true);
+            try {
+              const res = await resetDemoData();
+              Alert.alert('Demo Data Reset', `Successfully removed ${res.deletedCount} demo record(s) from local SQLite.`);
+            } catch (err: unknown) {
+              Alert.alert('Error', err instanceof Error ? err.message : 'Failed to reset demo data');
+            } finally {
+              setIsResetting(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -157,6 +194,40 @@ export default function SettingsScreen() {
           <Text style={styles.settingName}>Real Outbound SMS/Voice</Text>
           <Text style={[styles.settingValue, { color: '#F59E0B' }]}>Disabled (Demo Safe)</Text>
         </View>
+      </View>
+
+      {/* Demo Mode & Scenarios Card */}
+      <View style={styles.card}>
+        <View style={styles.profileHeader}>
+          <Text style={styles.sectionTitle}>Interactive Demo Mode</Text>
+          <Switch
+            value={isDemoMode}
+            onValueChange={() => toggleDemoMode()}
+            trackColor={{ false: '#334155', true: '#F97316' }}
+            thumbColor={isDemoMode ? '#FFFFFF' : '#94A3B8'}
+          />
+        </View>
+
+        <Text style={styles.demoNoteText}>
+          When Demo Mode is active, all generated incidents, vitals, and triage carry <Text style={{ fontWeight: 'bold', color: '#FBBF24' }}>is_demo = true</Text>. Real outbound carrier SMS and voice calls are strictly blocked.
+        </Text>
+
+        <TouchableOpacity
+          style={styles.scenarioButton}
+          onPress={() => router.push('/(tabs)/demo')}
+        >
+          <Text style={styles.scenarioButtonText}>Open Scripted Demo Scenarios</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.resetButton}
+          onPress={handleResetDemo}
+          disabled={isResetting}
+        >
+          <Text style={styles.resetButtonText}>
+            {isResetting ? 'Purging Demo Data...' : 'Reset Demo Data (Deletes Demo Rows Only)'}
+          </Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -340,5 +411,36 @@ const styles = StyleSheet.create({
     color: '#FCA5A5',
     fontSize: 11,
     lineHeight: 15
+  },
+  demoNoteText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    lineHeight: 18,
+    marginBottom: 12
+  },
+  scenarioButton: {
+    backgroundColor: '#EA580C',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 10
+  },
+  scenarioButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  resetButton: {
+    backgroundColor: '#7F1D1D',
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    paddingVertical: 11,
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  resetButtonText: {
+    color: '#FEE2E2',
+    fontSize: 12,
+    fontWeight: '700'
   }
 });

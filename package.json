@@ -10,6 +10,7 @@
     "build:web": "pnpm --filter @trinetra/web build",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm --filter @trinetra/mobile test",
+    "smoke": "node scripts/smokeTest.mjs",
     "build": "pnpm run build:shared && pnpm run build:web"
   },
   "devDependencies": {

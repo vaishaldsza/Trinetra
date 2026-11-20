@@ -376,4 +376,19 @@ export class SupabaseDataProvider implements DataProvider {
       };
     }
   }
+
+  public async resetDemoData(): Promise<{ deletedCount: number }> {
+    try {
+      const { data, error } = await this.client
+        .from('incidents')
+        .delete()
+        .eq('is_demo', true)
+        .select('id');
+      if (error) throw error;
+      return { deletedCount: data?.length || 0 };
+    } catch (err) {
+      console.error('Error resetting demo data in Supabase:', err);
+      return { deletedCount: 0 };
+    }
+  }
 }

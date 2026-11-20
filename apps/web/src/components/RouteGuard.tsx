@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 // Routes accessible without authentication even when Supabase is configured
-const PUBLIC_ROUTES = ['/', '/login'];
+const PUBLIC_ROUTES = ['/', '/login', '/demo'];
 
 export default function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

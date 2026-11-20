@@ -36,6 +36,7 @@ import {
   linkUnlinkedVitalsToIncident,
   enqueueSync,
   getSyncStatusCounts,
+  resetDemoDataLocal,
   SyncStatusCounts
 } from '../lib/db';
 import { processSyncQueue } from '../lib/sync';
@@ -68,6 +69,13 @@ interface SafetyState {
   isFallDetectionActive: boolean;
   fallCountdownSeconds: number | null;
   showFallAlertModal: boolean;
+
+  // Demo Mode State
+  isDemoMode: boolean;
+  isSimulatedOffline: boolean;
+  toggleDemoMode: (enabled?: boolean) => void;
+  toggleSimulatedOffline: (offline?: boolean) => void;
+  resetDemoData: () => Promise<{ deletedCount: number }>;
 
   // Actions
   initStore: () => Promise<void>;
@@ -124,6 +132,38 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   isFallDetectionActive: false,
   fallCountdownSeconds: null,
   showFallAlertModal: false,
+
+  isDemoMode: true,
+  isSimulatedOffline: false,
+  toggleDemoMode: (enabled?: boolean) => {
+    set((state) => ({
+      isDemoMode: enabled !== undefined ? enabled : !state.isDemoMode
+    }));
+  },
+  toggleSimulatedOffline: (offline?: boolean) => {
+    set((state) => ({
+      isSimulatedOffline: offline !== undefined ? offline : !state.isSimulatedOffline
+    }));
+  },
+  resetDemoData: async () => {
+    const result = await resetDemoDataLocal();
+    const userId = get().profile.id;
+    const [sessions, incidents, syncCounts] = await Promise.all([
+      getLocalSessions(userId),
+      getLocalIncidents(userId),
+      getSyncStatusCounts()
+    ]);
+    set({
+      pastSessions: sessions.filter(s => s.status === HikingSessionStatus.COMPLETED),
+      activeIncident: incidents.find(
+        i => i.status === IncidentStatus.DETECTED ||
+             i.status === IncidentStatus.EMERGENCY_INITIATED ||
+             i.status === IncidentStatus.ASSISTANCE_REQUESTED
+      ) || null,
+      syncCounts
+    });
+    return result;
+  },
 
   initStore: async () => {
     await getDb();
@@ -332,7 +372,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       set({ locationPermissionGranted: false });
     }
 
-    const session: HikingSession = {
+    const session: HikingSession & { is_demo?: boolean } = {
       id: Crypto.randomUUID(),
       user_id: userId,
       start_time: now,
@@ -342,6 +382,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
         latitude: coords?.latitude || 32.3716,
         longitude: coords?.longitude || 77.2466
       },
+      is_demo: get().isDemoMode,
       created_at: now
     };
 
@@ -442,7 +483,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       priority: IncidentPriority.CRITICAL,
       status: IncidentStatus.EMERGENCY_INITIATED,
       detection_source: detectionSource,
-      is_demo: true,
+      is_demo: get().isDemoMode,
       created_at: now
     };
 
@@ -544,7 +585,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       incident = await get().triggerSOS(DetectionSource.SYSTEM, IncidentType.HEALTH_ANOMALY);
     }
 
-    const triageRecord: TriageAssessment = {
+    const triageRecord: TriageAssessment & { is_demo?: boolean } = {
       id: Crypto.randomUUID(),
       incident_id: incident?.id || 'd0000000-0000-0000-0000-000000000001',
       consciousness_status: input.consciousness,
@@ -554,6 +595,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       mobility_status: input.mobility,
       pain_level: input.painLevel,
       assessment_summary: summary,
+      is_demo: get().isDemoMode,
       created_at: new Date().toISOString()
     };
 
@@ -582,7 +624,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   },
 
   // Vitals Recording (Camera PPG non-diagnostic)
-  recordVitalReading: async (bpm: number, quality: number, isDemo = true): Promise<VitalReading> => {
+  recordVitalReading: async (bpm: number, quality: number, isDemo?: boolean): Promise<VitalReading> => {
     const incident = get().activeIncident;
     const session = get().activeSession;
     const reading: VitalReading = {
@@ -591,7 +633,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       heart_rate_estimate: bpm,
       signal_quality: quality,
       measurement_duration: 30.0,
-      is_demo: isDemo,
+      is_demo: isDemo !== undefined ? isDemo : get().isDemoMode,
       recorded_at: new Date().toISOString()
     };
 
@@ -613,6 +655,12 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   },
 
   syncNow: async () => {
+    // If simulated offline mode is toggled, leave rows pending with 0 network calls
+    if (get().isSimulatedOffline) {
+      const counts = await getSyncStatusCounts();
+      set({ syncCounts: counts });
+      return;
+    }
     set({ isSyncing: true });
     try {
       const result = await processSyncQueue();

@@ -200,6 +200,14 @@ export default function HomeScreen() {
       </View>
 
       <TouchableOpacity
+        style={[styles.settingsRow, { backgroundColor: '#0F172A', borderColor: '#EA580C', borderWidth: 1 }]}
+        onPress={() => router.push('/(tabs)/demo')}
+      >
+        <Text style={[styles.settingsText, { color: '#F97316', fontWeight: 'bold' }]}>🧪 Scripted Demo Scenarios</Text>
+        <Text style={[styles.arrowText, { color: '#F97316' }]}>→</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={styles.settingsRow}
         onPress={() => router.push('/settings')}
       >

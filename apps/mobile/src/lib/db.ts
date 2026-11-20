@@ -247,6 +247,29 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     }
     await db.execAsync(`INSERT INTO schema_version (version, applied_at) VALUES (6, datetime('now'));`);
   }
+
+  // Migration 7: Add is_demo column to tables that lack it
+  if (currentVersion < 7) {
+    try {
+      await db.execAsync(`ALTER TABLE local_hiking_sessions ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;`);
+    } catch {}
+    try {
+      await db.execAsync(`ALTER TABLE local_triage_assessments ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;`);
+    } catch {}
+    try {
+      await db.execAsync(`ALTER TABLE local_location_history ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;`);
+    } catch {}
+    try {
+      await db.execAsync(`ALTER TABLE local_notification_requests ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;`);
+    } catch {}
+    try {
+      await db.execAsync(`ALTER TABLE local_emergency_contacts ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;`);
+    } catch {}
+    try {
+      await db.execAsync(`ALTER TABLE local_profiles ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;`);
+    } catch {}
+    await db.execAsync(`INSERT INTO schema_version (version, applied_at) VALUES (7, datetime('now'));`);
+  }
 }
 
 // ==================== PROFILE OPERATIONS ====================
@@ -873,4 +896,155 @@ export async function unblockChildrenOfParent(
   }
 
   return count;
+}
+
+// ==================== DEMO DATA OPERATIONS ====================
+export async function resetDemoDataLocal(): Promise<{ deletedCount: number }> {
+  const db = await getDb();
+  let count = 0;
+
+  if (db) {
+    await db.withTransactionAsync(async () => {
+      // 1. Delete vitals that are demo or tied to demo incidents
+      const vRes = await db.runAsync(`
+        DELETE FROM local_vital_readings 
+        WHERE is_demo = 1 
+           OR incident_id IN (SELECT id FROM local_incidents WHERE is_demo = 1);
+      `);
+      count += vRes.changes;
+
+      // 2. Delete notification requests that are demo or tied to demo incidents
+      const nRes = await db.runAsync(`
+        DELETE FROM local_notification_requests 
+        WHERE is_demo = 1 
+           OR incident_id IN (SELECT id FROM local_incidents WHERE is_demo = 1);
+      `);
+      count += nRes.changes;
+
+      // 3. Delete triage assessments that are demo or tied to demo incidents
+      const tRes = await db.runAsync(`
+        DELETE FROM local_triage_assessments 
+        WHERE is_demo = 1 
+           OR incident_id IN (SELECT id FROM local_incidents WHERE is_demo = 1);
+      `);
+      count += tRes.changes;
+
+      // 4. Delete demo incidents
+      const incRes = await db.runAsync(`DELETE FROM local_incidents WHERE is_demo = 1;`);
+      count += incRes.changes;
+
+      // 5. Delete location history tied to demo sessions
+      const lRes = await db.runAsync(`
+        DELETE FROM local_location_history 
+        WHERE is_demo = 1 
+           OR session_id IN (SELECT id FROM local_hiking_sessions WHERE is_demo = 1);
+      `);
+      count += lRes.changes;
+
+      // 6. Delete demo hiking sessions
+      const sessRes = await db.runAsync(`DELETE FROM local_hiking_sessions WHERE is_demo = 1;`);
+      count += sessRes.changes;
+
+      // 7. Delete demo emergency contacts
+      const cRes = await db.runAsync(`DELETE FROM local_emergency_contacts WHERE is_demo = 1;`);
+      count += cRes.changes;
+
+      // 8. Delete demo items from sync_queue
+      const qRes = await db.runAsync(`
+        DELETE FROM sync_queue 
+        WHERE payload_json LIKE '%"is_demo":true%' 
+           OR payload_json LIKE '%"is_demo": true%'
+           OR payload_json LIKE '%"is_demo":1%'
+           OR payload_json LIKE '%"is_demo": 1%';
+      `);
+      count += qRes.changes;
+    });
+  } else {
+    // Memory store fallback for web & unit tests
+    const demoIncidentIds = new Set<string>();
+    const demoSessionIds = new Set<string>();
+
+    for (const [id, inc] of memoryStore.incidents.entries()) {
+      if (inc.is_demo) {
+        demoIncidentIds.add(id);
+        memoryStore.incidents.delete(id);
+        count++;
+      }
+    }
+
+    for (const [id, sess] of memoryStore.sessions.entries()) {
+      if ((sess as any).is_demo) {
+        demoSessionIds.add(id);
+        memoryStore.sessions.delete(id);
+        count++;
+      }
+    }
+
+    for (const [id, vital] of memoryStore.vitals.entries()) {
+      if (vital.is_demo || demoIncidentIds.has(vital.incident_id)) {
+        memoryStore.vitals.delete(id);
+        count++;
+      }
+    }
+
+    for (const [id, tri] of memoryStore.triage.entries()) {
+      if ((tri as any).is_demo || demoIncidentIds.has(tri.incident_id)) {
+        memoryStore.triage.delete(id);
+        count++;
+      }
+    }
+
+    for (const [id, notif] of memoryStore.notifications.entries()) {
+      if ((notif as any).is_demo || demoIncidentIds.has(notif.incident_id)) {
+        memoryStore.notifications.delete(id);
+        count++;
+      }
+    }
+
+    memoryStore.locations = memoryStore.locations.filter((loc) => {
+      const isDemo = (loc as any).is_demo || demoSessionIds.has(loc.session_id);
+      if (isDemo) count++;
+      return !isDemo;
+    });
+
+    for (const [id, cont] of memoryStore.contacts.entries()) {
+      if ((cont as any).is_demo) {
+        memoryStore.contacts.delete(id);
+        count++;
+      }
+    }
+
+    const prevQueueLen = memoryStore.syncQueue.length;
+    memoryStore.syncQueue = memoryStore.syncQueue.filter((q) => {
+      const isDemoPayload =
+        q.payload_json.includes('"is_demo":true') ||
+        q.payload_json.includes('"is_demo": true') ||
+        q.payload_json.includes('"is_demo":1') ||
+        q.payload_json.includes('"is_demo": 1');
+      return !isDemoPayload;
+    });
+    count += prevQueueLen - memoryStore.syncQueue.length;
+  }
+
+  return { deletedCount: count };
+}
+
+export async function getDemoRecordCounts(): Promise<{ incidents: number; sessions: number; vitals: number }> {
+  const db = await getDb();
+  if (db) {
+    const incRow = await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) as count FROM local_incidents WHERE is_demo = 1;`);
+    const sessRow = await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) as count FROM local_hiking_sessions WHERE is_demo = 1;`);
+    const vitRow = await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) as count FROM local_vital_readings WHERE is_demo = 1;`);
+    return {
+      incidents: incRow?.count ?? 0,
+      sessions: sessRow?.count ?? 0,
+      vitals: vitRow?.count ?? 0
+    };
+  } else {
+    return {
+      incidents: Array.from(memoryStore.incidents.values()).filter(i => i.is_demo).length,
+      sessions: Array.from(memoryStore.sessions.values()).filter(s => (s as any).is_demo).length,
+      vitals: Array.from(memoryStore.vitals.values()).filter(v => v.is_demo).length
+    };
+  }
 }

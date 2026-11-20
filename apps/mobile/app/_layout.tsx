@@ -3,18 +3,21 @@ import { View, Text, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { DEMO_BANNER_LABEL } from '@trinetra/shared';
 import { FallAlertModal } from '../src/components/FallAlertModal';
+import { useSafetyStore } from '../src/store/safetyStore';
 
 export default function RootLayout() {
-  const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
+  const isStoreDemoMode = useSafetyStore((s) => s.isDemoMode);
+  const isEnvDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
+  const showDemoBanner = isStoreDemoMode || isEnvDemoMode;
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      {/* Demo Mode Top Indicator: Only displayed when EXPO_PUBLIC_DEMO_MODE=true */}
-      {isDemoMode && (
+      {/* Demo Mode Top Indicator: Displayed whenever Demo Mode is active */}
+      {showDemoBanner && (
         <View style={styles.demoBanner}>
           <Text style={styles.demoBadge}>{DEMO_BANNER_LABEL}</Text>
-          <Text style={styles.demoText}>TRINETRA SAFETY · OFFLINE SIMULATION</Text>
+          <Text style={styles.demoText}>TRINETRA SAFETY · OFFLINE DEMO MODE</Text>
         </View>
       )}
 

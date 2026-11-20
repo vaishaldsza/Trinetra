@@ -103,4 +103,5 @@ export interface DataProvider {
   toggleRealtimeSimulation(enable?: boolean): boolean;
   isRealtimeSimulationActive(): boolean;
   triggerManualIncident?(): Promise<IncidentWithRelations>;
+  resetDemoData(): Promise<{ deletedCount: number }>;
 }

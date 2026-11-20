@@ -23,6 +23,13 @@ export default function TabsLayout() {
           tabBarLabel: 'Home'
         }}
       />
+      <Tabs.Screen
+        name="demo"
+        options={{
+          title: 'Demo Scenarios',
+          tabBarLabel: 'Scenarios'
+        }}
+      />
     </Tabs>
   );
 }

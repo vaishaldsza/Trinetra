@@ -80,6 +80,9 @@ export default function RootLayout({
                   <Link href="/analytics" className="px-3 py-1.5 text-sm font-medium rounded-md text-slate-300 hover:text-white hover:bg-slate-800 transition">
                     Analytics
                   </Link>
+                  <Link href="/demo" className="px-3 py-1.5 text-sm font-bold rounded-md text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 transition border border-orange-500/20">
+                    Demo Scenarios
+                  </Link>
                 </nav>
               </div>
 
@@ -112,6 +115,9 @@ export default function RootLayout({
               </Link>
               <Link href="/analytics" className="px-2.5 py-1 font-medium rounded bg-slate-800/60 text-slate-200 whitespace-nowrap">
                 Analytics
+              </Link>
+              <Link href="/demo" className="px-2.5 py-1 font-bold rounded bg-orange-600/30 text-orange-400 border border-orange-500/40 whitespace-nowrap">
+                Demo
               </Link>
             </nav>
           </div>

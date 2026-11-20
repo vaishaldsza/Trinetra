@@ -360,4 +360,22 @@ export class MockDataProvider implements DataProvider {
       dispatchedNotifications: allNotifs.length - pendingNotifications
     };
   }
+
+  public async resetDemoData(): Promise<{ deletedCount: number }> {
+    const prevCount = this.incidents.length;
+    // Delete only is_demo rows
+    this.incidents = this.incidents.filter(i => !i.is_demo);
+    this.sessions = this.sessions.filter(s => !(s as any).is_demo);
+    this.hikers = this.hikers.filter(h => !(h as any).is_demo);
+    const deletedCount = prevCount - this.incidents.length;
+
+    this.notify({
+      type: 'incident_updated',
+      timestamp: new Date().toISOString(),
+      data: { reset: true, deletedCount },
+      message: `[DEMO RESET] Purged ${deletedCount} demo incident(s) from local mock store.`
+    });
+
+    return { deletedCount };
+  }
 }
