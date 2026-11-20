@@ -111,6 +111,7 @@ const samplePayloads: Record<SyncTableName, Record<string, unknown>> = {
     phone_number: '+919876543211',
     relationship: 'Sibling',
     priority: 1,
+    consent: true,
     created_at: new Date().toISOString(),
     sync_status: 'pending'
   },

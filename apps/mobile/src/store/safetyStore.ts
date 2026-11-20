@@ -147,6 +147,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
         phone_number: '+919876543219',
         relationship: 'Sibling',
         priority: 1,
+        consent: true,
         created_at: new Date().toISOString()
       };
       await saveLocalContact(defaultContact);
@@ -253,6 +254,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       phone_number: phone.trim(),
       relationship,
       priority,
+      consent: true,
       created_at: new Date().toISOString()
     };
 

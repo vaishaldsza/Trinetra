@@ -37,6 +37,7 @@ export const SUPABASE_TABLE_COLUMNS = {
     'phone_number',
     'relationship',
     'priority',
+    'consent',
     'created_at'
   ],
   hiking_sessions: [

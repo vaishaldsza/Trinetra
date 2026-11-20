@@ -6,6 +6,7 @@ import {
   saveLocalIncident,
   getLocalIncidents,
   getParentSyncStatus,
+  unblockChildrenOfParent,
   SyncStatusCounts,
   SyncQueueItem
 } from './db';
@@ -171,6 +172,20 @@ export async function processSyncQueue(): Promise<SyncResult> {
       syncedRecordIds.add(item.record_id);
       pendingRecordIds.delete(item.record_id);
       syncedThisRun++;
+
+      // When parent succeeds (or is manually retried), unblock its children
+      await unblockChildrenOfParent(item.table_name, item.record_id);
+
+      // Fire-and-forget backend incident processing on incident sync
+      if (item.table_name === 'incidents' && item.action !== 'delete') {
+        try {
+          supabase.functions.invoke('process-incident', {
+            body: { incident_id: item.record_id }
+          }).catch(() => {});
+        } catch {
+          // Fire and forget: skips silently if unconfigured or network fails
+        }
+      }
     } catch (err: unknown) {
       const errMessage = (err as { message?: string })?.message || String(err);
       const detailedError = `[${item.table_name}:${item.record_id}] ${errMessage}`;

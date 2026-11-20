@@ -237,6 +237,16 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     }
     await db.execAsync(`INSERT INTO schema_version (version, applied_at) VALUES (5, datetime('now'));`);
   }
+
+  // Migration 6: Add consent to local_emergency_contacts
+  if (currentVersion < 6) {
+    try {
+      await db.execAsync(`ALTER TABLE local_emergency_contacts ADD COLUMN consent INTEGER NOT NULL DEFAULT 1;`);
+    } catch {
+      // Column may exist on fresh installs
+    }
+    await db.execAsync(`INSERT INTO schema_version (version, applied_at) VALUES (6, datetime('now'));`);
+  }
 }
 
 // ==================== PROFILE OPERATIONS ====================
@@ -284,11 +294,30 @@ export async function getLocalProfile(id: string): Promise<Profile | null> {
 export async function getLocalContacts(userId: string): Promise<EmergencyContact[]> {
   const db = await getDb();
   if (db) {
-    const rows = await db.getAllAsync<EmergencyContact>(
+    interface ContactRow {
+      id: string;
+      user_id: string;
+      contact_name: string;
+      phone_number: string;
+      relationship: string;
+      priority: number;
+      consent?: number;
+      created_at: string;
+    }
+    const rows = await db.getAllAsync<ContactRow>(
       `SELECT * FROM local_emergency_contacts WHERE user_id = ? ORDER BY priority ASC;`,
       [userId]
     );
-    return rows;
+    return rows.map((r): EmergencyContact => ({
+      id: r.id,
+      user_id: r.user_id,
+      contact_name: r.contact_name,
+      phone_number: r.phone_number,
+      relationship: r.relationship,
+      priority: r.priority,
+      consent: r.consent !== 0,
+      created_at: r.created_at
+    }));
   }
   return Array.from(memoryStore.contacts.values()).filter(c => c.user_id === userId);
 }
@@ -297,13 +326,14 @@ export async function saveLocalContact(contact: EmergencyContact): Promise<void>
   const db = await getDb();
   if (db) {
     await db.runAsync(
-      `INSERT INTO local_emergency_contacts (id, user_id, contact_name, phone_number, relationship, priority, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO local_emergency_contacts (id, user_id, contact_name, phone_number, relationship, priority, consent, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          contact_name = excluded.contact_name,
          phone_number = excluded.phone_number,
          relationship = excluded.relationship,
-         priority = excluded.priority;`,
+         priority = excluded.priority,
+         consent = excluded.consent;`,
       [
         contact.id,
         contact.user_id,
@@ -311,6 +341,7 @@ export async function saveLocalContact(contact: EmergencyContact): Promise<void>
         contact.phone_number,
         contact.relationship,
         contact.priority,
+        contact.consent !== false ? 1 : 0,
         contact.created_at || new Date().toISOString()
       ]
     );
@@ -780,4 +811,66 @@ export async function getParentSyncStatus(
     }
     return 'synced';
   }
+}
+
+export async function unblockChildrenOfParent(
+  parentTable: SyncQueueItem['table_name'],
+  parentRecordId: string
+): Promise<number> {
+  const db = await getDb();
+  let count = 0;
+
+  if (db) {
+    const blockedRows = await db.getAllAsync<SyncQueueItem>(
+      `SELECT * FROM sync_queue WHERE status = 'failed' AND error_message = 'blocked: parent failed';`
+    );
+
+    for (const item of blockedRows) {
+      const payload = JSON.parse(item.payload_json);
+      let isChild = false;
+      if ((item.table_name === 'emergency_contacts' || item.table_name === 'hiking_sessions') && parentTable === 'profiles' && payload.user_id === parentRecordId) {
+        isChild = true;
+      } else if (item.table_name === 'incidents' && parentTable === 'hiking_sessions' && payload.session_id === parentRecordId) {
+        isChild = true;
+      } else if ((item.table_name === 'triage_assessments' || item.table_name === 'vital_readings') && parentTable === 'incidents' && payload.incident_id === parentRecordId) {
+        isChild = true;
+      } else if (item.table_name === 'location_history' && parentTable === 'hiking_sessions' && payload.session_id === parentRecordId) {
+        isChild = true;
+      }
+
+      if (isChild) {
+        await db.runAsync(
+          `UPDATE sync_queue SET status = 'pending', attempts = 0, error_message = NULL, updated_at = datetime('now') WHERE id = ?;`,
+          [item.id]
+        );
+        count++;
+      }
+    }
+  } else {
+    for (const item of memoryStore.syncQueue) {
+      if (item.status === 'failed' && item.error_message === 'blocked: parent failed') {
+        const payload = JSON.parse(item.payload_json);
+        let isChild = false;
+        if ((item.table_name === 'emergency_contacts' || item.table_name === 'hiking_sessions') && parentTable === 'profiles' && payload.user_id === parentRecordId) {
+          isChild = true;
+        } else if (item.table_name === 'incidents' && parentTable === 'hiking_sessions' && payload.session_id === parentRecordId) {
+          isChild = true;
+        } else if ((item.table_name === 'triage_assessments' || item.table_name === 'vital_readings') && parentTable === 'incidents' && payload.incident_id === parentRecordId) {
+          isChild = true;
+        } else if (item.table_name === 'location_history' && parentTable === 'hiking_sessions' && payload.session_id === parentRecordId) {
+          isChild = true;
+        }
+
+        if (isChild) {
+          item.status = 'pending';
+          item.attempts = 0;
+          item.error_message = undefined;
+          item.updated_at = new Date().toISOString();
+          count++;
+        }
+      }
+    }
+  }
+
+  return count;
 }

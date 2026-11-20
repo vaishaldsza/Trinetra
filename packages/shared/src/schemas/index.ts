@@ -32,6 +32,7 @@ export const EmergencyContactSchema = z.object({
   phone_number: z.string().regex(E164_PHONE_REGEX, 'Phone number must be in E.164 format (e.g. +919876543210)'),
   relationship: z.string().min(1, 'Relationship is required'),
   priority: z.number().int().min(1).default(1),
+  consent: z.boolean().default(true),
   created_at: z.string().datetime().optional()
 });
 
