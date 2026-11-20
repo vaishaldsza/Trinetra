@@ -22,7 +22,8 @@
       "package": "safety.trinetra.mobile"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-sqlite"
     ]
   }
 }
