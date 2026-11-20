@@ -580,7 +580,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
     const incident = get().activeIncident;
     const reading: VitalReading = {
       id: Crypto.randomUUID(),
-      incident_id: incident?.id || 'd0000000-0000-0000-0000-000000000001',
+      incident_id: incident?.id || '00000000-0000-0000-0000-000000000000',
       heart_rate_estimate: bpm,
       signal_quality: quality,
       measurement_duration: 30.0,
@@ -588,10 +588,16 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
       recorded_at: new Date().toISOString()
     };
 
+    // Always persist to local SQLite
     await saveLocalVital(reading);
-    await enqueueSync(Crypto.randomUUID(), 'vital_readings', 'insert', reading.id, reading as unknown as Record<string, unknown>);
-    const counts = await getSyncStatusCounts();
-    set({ syncCounts: counts });
+
+    // If an incident is active, queue for cloud synchronization.
+    // If no incident is active, keep the vital reading local-only in SQLite to prevent FK constraint failures.
+    if (incident) {
+      await enqueueSync(Crypto.randomUUID(), 'vital_readings', 'insert', reading.id, reading as unknown as Record<string, unknown>);
+      const counts = await getSyncStatusCounts();
+      set({ syncCounts: counts });
+    }
 
     return reading;
   },

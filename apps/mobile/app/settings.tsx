@@ -1,12 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useSafetyStore } from '../src/store/safetyStore';
+import { getFailedSyncItems, SyncQueueItem } from '../src/lib/db';
 
 export default function SettingsScreen() {
   const { profile, updateProfile, syncCounts, syncNow, isSyncing } = useSafetyStore();
   const [fullName, setFullName] = useState(profile.full_name);
   const [phone, setPhone] = useState(profile.phone || '');
   const [isEditing, setIsEditing] = useState(false);
+  const [failedItems, setFailedItems] = useState<SyncQueueItem[]>([]);
+
+  useEffect(() => {
+    getFailedSyncItems().then(setFailedItems).catch(() => {});
+  }, [syncCounts, isSyncing]);
 
   const handleSaveProfile = async () => {
     if (!fullName.trim()) {
@@ -111,6 +117,26 @@ export default function SettingsScreen() {
             {isSyncing ? 'Synchronizing with Cloud...' : 'Trigger Immediate Sync'}
           </Text>
         </TouchableOpacity>
+
+        {failedItems.length > 0 && (
+          <View style={styles.failedListSection}>
+            <Text style={styles.failedListHeading}>Failed Sync Operations ({failedItems.length})</Text>
+            {failedItems.map((item) => (
+              <View key={item.id} style={styles.failedItemCard}>
+                <View style={styles.failedHeaderRow}>
+                  <View style={styles.failedBadge}>
+                    <Text style={styles.failedBadgeText}>{item.table_name.toUpperCase()}</Text>
+                  </View>
+                  <Text style={styles.failedRecordId}>ID: {item.record_id.slice(0, 8)}...</Text>
+                  <Text style={styles.failedAttempts}>Attempts: {item.attempts}</Text>
+                </View>
+                <Text style={styles.failedErrorText}>
+                  {item.error_message || 'Supabase error during mutation upsert'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* Safety System Guardrails */}
@@ -259,5 +285,60 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
     fontSize: 13,
     fontWeight: '600'
+  },
+  failedListSection: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#334155'
+  },
+  failedListHeading: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EF4444',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10
+  },
+  failedItemCard: {
+    backgroundColor: '#1E1B2E',
+    borderColor: '#7F1D1D',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8
+  },
+  failedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4
+  },
+  failedBadge: {
+    backgroundColor: '#7F1D1D',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2
+  },
+  failedBadgeText: {
+    color: '#FECACA',
+    fontSize: 10,
+    fontWeight: '800'
+  },
+  failedRecordId: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    flex: 1
+  },
+  failedAttempts: {
+    color: '#F87171',
+    fontSize: 10,
+    fontWeight: '700'
+  },
+  failedErrorText: {
+    color: '#FCA5A5',
+    fontSize: 11,
+    lineHeight: 15
   }
 });

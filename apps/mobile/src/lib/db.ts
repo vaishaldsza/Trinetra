@@ -23,6 +23,7 @@ export interface SyncQueueItem {
   status: 'pending' | 'processing' | 'synced' | 'failed';
   attempts: number;
   last_attempt_at?: string;
+  error_message?: string;
   created_at: string;
   updated_at: string;
 }
@@ -215,6 +216,16 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
       INSERT INTO schema_version (version, applied_at) VALUES (3, datetime('now'));
     `);
+  }
+
+  // Migration 4: Add error_message column to sync_queue
+  if (currentVersion < 4) {
+    try {
+      await db.execAsync(`ALTER TABLE sync_queue ADD COLUMN error_message TEXT;`);
+    } catch {
+      // Column may exist on fresh installs
+    }
+    await db.execAsync(`INSERT INTO schema_version (version, applied_at) VALUES (4, datetime('now'));`);
   }
 }
 
@@ -570,20 +581,21 @@ export async function getPendingSyncQueue(): Promise<SyncQueueItem[]> {
 export async function updateSyncItemResult(
   id: string,
   status: 'synced' | 'pending' | 'failed',
-  incrementAttempt = true
+  incrementAttempt = true,
+  errorMessage?: string
 ): Promise<void> {
   const now = new Date().toISOString();
   const db = await getDb();
   if (db) {
     if (incrementAttempt) {
       await db.runAsync(
-        `UPDATE sync_queue SET status = ?, attempts = attempts + 1, last_attempt_at = ?, updated_at = ? WHERE id = ?;`,
-        [status, now, now, id]
+        `UPDATE sync_queue SET status = ?, attempts = attempts + 1, last_attempt_at = ?, error_message = ?, updated_at = ? WHERE id = ?;`,
+        [status, now, errorMessage || null, now, id]
       );
     } else {
       await db.runAsync(
-        `UPDATE sync_queue SET status = ?, updated_at = ? WHERE id = ?;`,
-        [status, now, id]
+        `UPDATE sync_queue SET status = ?, error_message = ?, updated_at = ? WHERE id = ?;`,
+        [status, errorMessage || null, now, id]
       );
     }
   } else {
@@ -592,9 +604,20 @@ export async function updateSyncItemResult(
       item.status = status;
       if (incrementAttempt) item.attempts += 1;
       item.last_attempt_at = now;
+      if (errorMessage !== undefined) item.error_message = errorMessage;
       item.updated_at = now;
     }
   }
+}
+
+export async function getFailedSyncItems(): Promise<SyncQueueItem[]> {
+  const db = await getDb();
+  if (db) {
+    return await db.getAllAsync<SyncQueueItem>(
+      `SELECT * FROM sync_queue WHERE status = 'failed' ORDER BY updated_at DESC LIMIT 20;`
+    );
+  }
+  return memoryStore.syncQueue.filter(q => q.status === 'failed');
 }
 
 export interface SyncStatusCounts {
