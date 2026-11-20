@@ -4,14 +4,18 @@ import { StatusBar } from 'expo-status-bar';
 import { DEMO_BANNER_LABEL } from '@trinetra/shared';
 
 export default function RootLayout() {
+  const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      {/* Demo Mode Top Indicator */}
-      <View style={styles.demoBanner}>
-        <Text style={styles.demoBadge}>{DEMO_BANNER_LABEL}</Text>
-        <Text style={styles.demoText}>TRINETRA SAFETY · OFFLINE SIMULATION</Text>
-      </View>
+      {/* Demo Mode Top Indicator: Only displayed when EXPO_PUBLIC_DEMO_MODE=true */}
+      {isDemoMode && (
+        <View style={styles.demoBanner}>
+          <Text style={styles.demoBadge}>{DEMO_BANNER_LABEL}</Text>
+          <Text style={styles.demoText}>TRINETRA SAFETY · OFFLINE SIMULATION</Text>
+        </View>
+      )}
 
       <Stack
         screenOptions={{

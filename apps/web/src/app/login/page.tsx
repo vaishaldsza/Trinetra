@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -11,12 +11,23 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ text: string; type: 'error' | 'success' } | null>(null);
+  const [message, setMessage] = useState<{ text: string; type: 'error' | 'success' | 'warning' } | null>(null);
+
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setMessage(null);
+
+    if (!isSupabaseConfigured) {
+      setMessage({
+        text: 'Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local to enable real authentication.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    setLoading(true);
 
     try {
       if (isSignUp) {
@@ -31,7 +42,7 @@ export default function LoginPage() {
           }
         });
         if (error) throw error;
-        setMessage({ text: 'Account created! Check your email or sign in.', type: 'success' });
+        setMessage({ text: 'Account created! Please check your email or sign in.', type: 'success' });
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -48,11 +59,11 @@ export default function LoginPage() {
     }
   };
 
-  const handleDemoLogin = (role: 'hiker' | 'admin') => {
-    setEmail(role === 'admin' ? 'admin.demo@trinetra.safety' : 'hiker.demo@trinetra.safety');
-    setPassword('DemoSafety123!');
+  const handlePrefillEmail = (role: 'hiker' | 'admin') => {
+    const demoEmail = role === 'admin' ? 'admin.demo@trinetra.safety' : 'hiker.demo@trinetra.safety';
+    setEmail(demoEmail);
     setMessage({
-      text: `Loaded demo credentials for ${role.toUpperCase()}. Click Sign In (or configure local Supabase).`,
+      text: `Prefilled email for ${role.toUpperCase()}. Enter your password to sign in.`,
       type: 'success'
     });
   };
@@ -69,11 +80,26 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {/* Clear warning if Supabase is not configured */}
+        {!isSupabaseConfigured && (
+          <div className="p-3.5 rounded-lg text-xs border bg-amber-950/60 border-amber-800 text-amber-200 space-y-1">
+            <div className="font-bold flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>Supabase not configured</span>
+            </div>
+            <p className="text-[11px] text-amber-300/80">
+              Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment to authenticate users.
+            </p>
+          </div>
+        )}
+
         {message && (
           <div
             className={`p-3 rounded-lg text-sm border ${
               message.type === 'error'
                 ? 'bg-red-950/60 border-red-800 text-red-200'
+                : message.type === 'warning'
+                ? 'bg-amber-950/60 border-amber-800 text-amber-200'
                 : 'bg-emerald-950/60 border-emerald-800 text-emerald-200'
             }`}
           >
@@ -144,28 +170,30 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Quick Demo Mode Accounts */}
-        <div className="pt-4 border-t border-slate-800">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400 mb-2">
-            DEMO MODE QUICK ACCESS
+        {/* Demo Mode Email Prefill: Only rendered when NEXT_PUBLIC_DEMO_MODE=true */}
+        {isDemoMode && (
+          <div className="pt-4 border-t border-slate-800">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400 mb-2">
+              DEMO MODE EMAIL PREFILL
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handlePrefillEmail('hiker')}
+                className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded border border-slate-700 transition"
+              >
+                Prefill Hiker Email
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePrefillEmail('admin')}
+                className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded border border-slate-700 transition"
+              >
+                Prefill Admin Email
+              </button>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => handleDemoLogin('hiker')}
-              className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded border border-slate-700 transition"
-            >
-              Demo Hiker
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDemoLogin('admin')}
-              className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded border border-slate-700 transition"
-            >
-              Demo Admin
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

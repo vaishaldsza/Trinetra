@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '../src/lib/supabase';
+import { supabase, isSupabaseConfigured } from '../src/lib/supabase';
 
 export default function MobileLoginScreen() {
   const router = useRouter();
@@ -10,11 +10,22 @@ export default function MobileLoginScreen() {
   const [fullName, setFullName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [statusText, setStatusText] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState<{ text: string; type: 'info' | 'error' | 'warning' } | null>(null);
+
+  const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 
   const handleAuth = async () => {
-    setLoading(true);
     setStatusText(null);
+
+    if (!isSupabaseConfigured) {
+      setStatusText({
+        text: 'Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to enable authentication.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    setLoading(true);
 
     try {
       if (isSignUp) {
@@ -29,7 +40,7 @@ export default function MobileLoginScreen() {
           }
         });
         if (error) throw error;
-        setStatusText('Account registered! You can now sign in.');
+        setStatusText({ text: 'Account registered! Please sign in.', type: 'info' });
         setIsSignUp(false);
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -41,19 +52,18 @@ export default function MobileLoginScreen() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Authentication failed';
-      setStatusText(msg);
+      setStatusText({ text: msg, type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemoSignIn = () => {
+  const handlePrefillEmail = () => {
     setEmail('hiker.demo@trinetra.safety');
-    setPassword('DemoSafety123!');
-    setStatusText('Demo credentials loaded. Navigating to Home...');
-    setTimeout(() => {
-      router.replace('/(tabs)/home');
-    }, 400);
+    setStatusText({
+      text: 'Prefilled demo email. Enter password to authenticate.',
+      type: 'info'
+    });
   };
 
   return (
@@ -63,9 +73,33 @@ export default function MobileLoginScreen() {
         {isSignUp ? 'Register to start protected sessions' : 'Access offline safety tools and history'}
       </Text>
 
+      {/* Supabase unconfigured warning */}
+      {!isSupabaseConfigured && (
+        <View style={styles.warningBox}>
+          <Text style={styles.warningTitle}>⚠️ Supabase not configured</Text>
+          <Text style={styles.warningSubtitle}>
+            Set EXPO_PUBLIC_SUPABASE_URL & EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment.
+          </Text>
+        </View>
+      )}
+
       {statusText && (
-        <View style={styles.statusBox}>
-          <Text style={styles.statusText}>{statusText}</Text>
+        <View
+          style={[
+            styles.statusBox,
+            statusText.type === 'error' && styles.statusBoxError,
+            statusText.type === 'warning' && styles.statusBoxWarning
+          ]}
+        >
+          <Text
+            style={[
+              styles.statusText,
+              statusText.type === 'error' && styles.statusTextError,
+              statusText.type === 'warning' && styles.statusTextWarning
+            ]}
+          >
+            {statusText.text}
+          </Text>
         </View>
       )}
 
@@ -119,12 +153,15 @@ export default function MobileLoginScreen() {
         </Text>
       </TouchableOpacity>
 
-      <View style={styles.demoSection}>
-        <Text style={styles.demoHeader}>QUICK DEMO MODE</Text>
-        <TouchableOpacity style={styles.demoButton} onPress={handleDemoSignIn}>
-          <Text style={styles.demoButtonText}>Sign In as Demo Hiker</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Demo Email Prefill: Only shown when EXPO_PUBLIC_DEMO_MODE=true */}
+      {isDemoMode && (
+        <View style={styles.demoSection}>
+          <Text style={styles.demoHeader}>DEMO MODE EMAIL PREFILL</Text>
+          <TouchableOpacity style={styles.demoButton} onPress={handlePrefillEmail}>
+            <Text style={styles.demoButtonText}>Prefill Demo Hiker Email</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -145,19 +182,51 @@ const styles = StyleSheet.create({
   subtext: {
     fontSize: 14,
     color: '#94A3B8',
-    marginBottom: 24
+    marginBottom: 20
+  },
+  warningBox: {
+    backgroundColor: '#451A03',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D97706',
+    marginBottom: 16
+  },
+  warningTitle: {
+    color: '#FDE68A',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2
+  },
+  warningSubtitle: {
+    color: '#FCD34D',
+    fontSize: 11
   },
   statusBox: {
     backgroundColor: '#1E293B',
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: '#38BDF8',
     marginBottom: 16
   },
+  statusBoxError: {
+    backgroundColor: '#450A0A',
+    borderColor: '#DC2626'
+  },
+  statusBoxWarning: {
+    backgroundColor: '#451A03',
+    borderColor: '#D97706'
+  },
   statusText: {
-    color: '#FCD34D',
-    fontSize: 13
+    color: '#BAE6FD',
+    fontSize: 12
+  },
+  statusTextError: {
+    color: '#FCA5A5'
+  },
+  statusTextWarning: {
+    color: '#FDE68A'
   },
   input: {
     backgroundColor: '#020617',
@@ -192,10 +261,10 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline'
   },
   demoSection: {
-    marginTop: 36,
+    marginTop: 32,
     borderTopWidth: 1,
     borderTopColor: '#334155',
-    paddingTop: 20
+    paddingTop: 16
   },
   demoHeader: {
     fontSize: 11,
@@ -214,7 +283,7 @@ const styles = StyleSheet.create({
   },
   demoButtonText: {
     color: '#E2E8F0',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600'
   }
 });

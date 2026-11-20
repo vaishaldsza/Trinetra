@@ -190,14 +190,40 @@ alter table public.agent_tasks enable row level security;
 alter table public.notifications enable row level security;
 alter table public.location_history enable row level security;
 
+-- Helper function: get user role securely
+create or replace function public.get_user_role(p_user_id uuid)
+returns public.user_role as $$
+  select role from public.profiles where id = p_user_id;
+$$ language sql security definer stable;
+
+-- Trigger to prevent normal users from modifying their own or other users' roles
+create or replace function public.prevent_role_modification()
+returns trigger as $$
+begin
+  if new.role is distinct from old.role and not public.is_admin() then
+    raise exception 'Unauthorized: Only administrators can modify user roles';
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_prevent_role_modification on public.profiles;
+create trigger trg_prevent_role_modification
+  before update on public.profiles
+  for each row execute procedure public.prevent_role_modification();
+
 -- RLS Policies: Profiles
 create policy "Users can view their own profile or admin can view all"
   on public.profiles for select
   using (auth.uid() = id or public.is_admin());
 
-create policy "Users can update their own profile or admin can update all"
+create policy "Users can update their own profile without changing role"
   on public.profiles for update
-  using (auth.uid() = id or public.is_admin());
+  using (auth.uid() = id or public.is_admin())
+  with check (
+    public.is_admin() 
+    or (auth.uid() = id and role = public.get_user_role(auth.uid()))
+  );
 
 create policy "Users can insert their own profile"
   on public.profiles for insert

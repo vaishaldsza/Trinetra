@@ -13,19 +13,23 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col font-sans antialiased bg-slate-950 text-slate-100">
-        {/* Top Demo Banner */}
-        <header className="bg-amber-500 text-slate-950 px-4 py-1 text-xs font-bold uppercase tracking-wider flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="bg-slate-950 text-amber-400 px-1.5 py-0.5 rounded text-[10px]">
-              {DEMO_BANNER_LABEL}
-            </span>
-            <span>Outdoor Safety System Demonstration — Real Emergency Dispatches Offline</span>
-          </div>
-          <span className="text-[11px] opacity-80 font-mono">v1.0-mvp</span>
-        </header>
+        {/* Top Demo Banner: Only shown when NEXT_PUBLIC_DEMO_MODE=true */}
+        {isDemoMode && (
+          <header className="bg-amber-500 text-slate-950 px-4 py-1 text-xs font-bold uppercase tracking-wider flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="bg-slate-950 text-amber-400 px-1.5 py-0.5 rounded text-[10px]">
+                {DEMO_BANNER_LABEL}
+              </span>
+              <span>Outdoor Safety System Demonstration — Real Emergency Dispatches Offline</span>
+            </div>
+            <span className="text-[11px] opacity-80 font-mono">v1.0-mvp</span>
+          </header>
+        )}
 
         {/* Navigation Bar */}
         <nav className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
