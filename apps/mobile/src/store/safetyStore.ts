@@ -133,7 +133,7 @@ export const useSafetyStore = create<SafetyState>((set, get) => ({
   fallCountdownSeconds: null,
   showFallAlertModal: false,
 
-  isDemoMode: true,
+  isDemoMode: process.env.EXPO_PUBLIC_DEMO_MODE === 'true',
   isSimulatedOffline: false,
   toggleDemoMode: (enabled?: boolean) => {
     set((state) => ({

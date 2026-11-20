@@ -8,7 +8,7 @@ export default function SOSScreen() {
   const { immediate, skipCountdown } = useLocalSearchParams<{ immediate?: string; skipCountdown?: string }>();
   const shouldSkipCountdown = immediate === 'true' || skipCountdown === 'true';
 
-  const { activeIncident, triggerSOS, cancelSOS, lastKnownLocation } = useSafetyStore();
+  const { activeIncident, triggerSOS, cancelSOS, lastKnownLocation, isDemoMode } = useSafetyStore();
   const [countdown, setCountdown] = useState<number | null>(null);
 
   // If navigated with skipCountdown/immediate parameter, immediately trigger SOS without hold or countdown
@@ -92,6 +92,12 @@ export default function SOSScreen() {
 
   return (
     <View style={styles.container}>
+      {isDemoMode && (
+        <View style={styles.demoWarningBanner}>
+          <Text style={styles.demoWarningText}>⚠️ Demo Mode is ON: no real alerts will be sent.</Text>
+        </View>
+      )}
+
       <Text style={styles.title}>EMERGENCY SOS</Text>
       <Text style={styles.description}>
         Generates an idempotent client-generated incident in local SQLite.
@@ -206,6 +212,23 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     lineHeight: 18,
     maxWidth: 340
+  },
+  demoWarningBanner: {
+    backgroundColor: '#78350F',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    width: '100%',
+    alignItems: 'center'
+  },
+  demoWarningText: {
+    color: '#FEF3C7',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   buttonWrapper: {
     alignItems: 'center',

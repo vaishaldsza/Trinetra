@@ -74,9 +74,9 @@ export default function MobileDemoScreen() {
           });
           setStepOutput(`Critical Escalation Triggered! Priority escalated immediately to CRITICAL.`);
         } else if (step.stepNumber === 4) {
-          // Log PPG Vitals estimate (44 bpm bradycardia)
+          // Log PPG Vitals estimate (44 bpm simulated value, non-diagnostic)
           const vital = await recordVitalReading(44, 0.88, true);
-          setStepOutput(`Optical PPG reading saved: ${vital.heart_rate_estimate} BPM (Severe Bradycardia, Non-Diagnostic [DEMO])`);
+          setStepOutput(`Optical PPG reading saved: ${vital.heart_rate_estimate} BPM (simulated value, non-diagnostic [DEMO])`);
         }
       } else if (scenarioId === 'remote_trail') {
         if (step.stepNumber === 1) {

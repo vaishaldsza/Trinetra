@@ -105,7 +105,7 @@ export const DEMO_SCENARIOS: DemoScenarioDefinition[] = [
       {
         stepNumber: 4,
         title: 'Camera PPG Optical Vitals Logged',
-        narration: 'Optical PPG algorithm records pulse reading: 44 BPM (severe bradycardia, quality 0.88). Reading saved as non-diagnostic estimate with is_demo = true.',
+        narration: 'Optical PPG algorithm records pulse reading: 44 BPM (simulated value, non-diagnostic, quality 0.88). Reading saved as non-diagnostic estimate with is_demo = true.',
         dataBadge: 'VITALS_ESTIMATE: 44 BPM [DEMO]',
         simulatedAction: 'Vitals record linked directly to incident ID in SQLite.',
         payloadSummary: {

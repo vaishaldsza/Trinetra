@@ -379,11 +379,26 @@ export class SupabaseDataProvider implements DataProvider {
 
   public async resetDemoData(): Promise<{ deletedCount: number }> {
     try {
-      const { data, error } = await this.client
+      const { data: { user } } = await this.client.auth.getUser();
+      if (!user) return { deletedCount: 0 };
+
+      const { data: profile } = await this.client
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      let query = this.client
         .from('incidents')
         .delete()
-        .eq('is_demo', true)
-        .select('id');
+        .eq('is_demo', true);
+
+      // In live mode it may only delete is_demo = true rows the caller can access
+      if (profile?.role !== 'admin') {
+        query = query.eq('user_id', user.id);
+      }
+
+      const { data, error } = await query.select('id');
       if (error) throw error;
       return { deletedCount: data?.length || 0 };
     } catch (err) {

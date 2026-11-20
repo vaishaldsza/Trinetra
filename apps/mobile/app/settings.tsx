@@ -208,6 +208,12 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {isDemoMode && (
+          <View style={styles.demoWarningBox}>
+            <Text style={styles.demoWarningText}>⚠️ Demo Mode is ON: no real alerts will be sent.</Text>
+          </View>
+        )}
+
         <Text style={styles.demoNoteText}>
           When Demo Mode is active, all generated incidents, vitals, and triage carry <Text style={{ fontWeight: 'bold', color: '#FBBF24' }}>is_demo = true</Text>. Real outbound carrier SMS and voice calls are strictly blocked.
         </Text>
@@ -417,6 +423,22 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     lineHeight: 18,
     marginBottom: 12
+  },
+  demoWarningBox: {
+    backgroundColor: '#78350F',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    alignItems: 'center'
+  },
+  demoWarningText: {
+    color: '#FEF3C7',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   scenarioButton: {
     backgroundColor: '#EA580C',

@@ -65,6 +65,38 @@ describe('Demo Mode & Hardening Unit Tests', () => {
     await useSafetyStore.getState().resetDemoData();
   });
 
+  it('with demo mode off, an SOS creates a row with is_demo = false. With demo mode on, is_demo = true', async () => {
+    const userId = useSafetyStore.getState().profile.id;
+
+    // 1. With Demo Mode OFF -> SOS creates row with is_demo = false
+    useSafetyStore.getState().toggleDemoMode(false);
+    expect(useSafetyStore.getState().isDemoMode).toBe(false);
+
+    const incOff = await useSafetyStore.getState().triggerSOS(DetectionSource.MANUAL, IncidentType.MANUAL_SOS);
+    expect(incOff.is_demo).toBe(false);
+
+    const savedOff = (await getLocalIncidents(userId)).find(i => i.id === incOff.id);
+    expect(savedOff).toBeDefined();
+    expect(savedOff?.is_demo).toBe(false);
+
+    await useSafetyStore.getState().cancelSOS(incOff.id);
+    useSafetyStore.setState({ activeIncident: null });
+
+    // 2. With Demo Mode ON -> SOS creates row with is_demo = true
+    useSafetyStore.getState().toggleDemoMode(true);
+    expect(useSafetyStore.getState().isDemoMode).toBe(true);
+
+    const incOn = await useSafetyStore.getState().triggerSOS(DetectionSource.MANUAL, IncidentType.MANUAL_SOS);
+    expect(incOn.is_demo).toBe(true);
+
+    const savedOn = (await getLocalIncidents(userId)).find(i => i.id === incOn.id);
+    expect(savedOn).toBeDefined();
+    expect(savedOn?.is_demo).toBe(true);
+
+    await useSafetyStore.getState().cancelSOS(incOn.id);
+    useSafetyStore.setState({ activeIncident: null });
+  });
+
   it('sets is_demo = true on all rows created while Demo Mode is ON', async () => {
     const store = useSafetyStore.getState();
     expect(store.isDemoMode).toBe(true);

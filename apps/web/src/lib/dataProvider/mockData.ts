@@ -300,7 +300,7 @@ export const SEEDED_INCIDENTS: IncidentWithRelations[] = [
         status: AgentTaskStatus.COMPLETED,
         input_data: { consciousness: 'responsive', heartRate: 118, pain: 8, mobility: 'immobile' },
         output_data: {
-          summary: 'Critical traumatic orthopedic injury with tachycardia (118 BPM) and respiratory distress. High risk of shock.',
+          summary: 'Critical traumatic orthopedic injury with elevated pulse estimate (118 BPM, simulated value, non-diagnostic) and respiratory distress. High risk of shock.',
           urgency: 'IMMEDIATE',
           fieldRecommendations: 'Splint right limb in position found; keep patient insulated against hypothermia; monitor airway.',
           isSimulated: true
@@ -417,7 +417,7 @@ export const SEEDED_INCIDENTS: IncidentWithRelations[] = [
       injury_location: 'Head/chest acute mountain sickness',
       mobility_status: 'limited',
       pain_level: 6,
-      assessment_summary: 'Severe acute mountain sickness (AMS) with extreme dizziness, cyanosis in fingers, and tachycardia at 3400m altitude.',
+      assessment_summary: 'Severe acute mountain sickness (AMS) with extreme dizziness, cyanosis in fingers, and elevated pulse (134 BPM, simulated value, non-diagnostic) at 3400m altitude.',
       created_at: '2026-11-20T08:05:50Z'
     },
     vital_readings: [

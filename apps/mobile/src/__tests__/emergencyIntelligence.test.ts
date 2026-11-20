@@ -454,6 +454,69 @@ describe('Emergency Intelligence (Backend Services)', () => {
     expect(sendResult.providerReference).toContain('DEMO-REF');
   });
 
+  it('LIVE DISPATCH: Calls Twilio (>0 calls) for non-demo incident with consented contacts', async () => {
+    const liveIncident: Incident = {
+      id: 'live-inc-dispatched-1',
+      user_id: 'user-live-1',
+      incident_type: IncidentType.MANUAL_SOS,
+      priority: IncidentPriority.CRITICAL,
+      status: IncidentStatus.EMERGENCY_INITIATED,
+      detection_source: DetectionSource.MANUAL,
+      is_demo: false, // NON-DEMO (Live production incident)
+      created_at: new Date().toISOString()
+    };
+
+    const consentedContact: EmergencyContact = {
+      id: 'contact-consented-1',
+      user_id: liveIncident.user_id,
+      contact_name: 'Priya Sharma (Sister)',
+      phone_number: '+919876543210',
+      relationship: 'Sibling',
+      priority: 1,
+      consent: true, // CONSENTED
+      created_at: new Date().toISOString()
+    };
+
+    const notification: Notification = {
+      id: 'notif-live-sms-1',
+      incident_id: liveIncident.id,
+      contact_id: consentedContact.id,
+      channel: NotificationChannel.SMS,
+      recipient: consentedContact.phone_number,
+      status: NotificationStatus.PENDING,
+      is_demo: false,
+      created_at: new Date().toISOString()
+    };
+
+    const db = createMockDb({ incident: liveIncident, notification, contacts: [consentedContact] });
+
+    const twilioSendSms = vi.fn().mockResolvedValue({ success: true, sid: 'SM_LIVE_CONFIRMED_123' });
+    const twilioMakeVoiceCall = vi.fn();
+    const mockTwilio: TwilioClient = {
+      isConfigured: () => true,
+      sendSms: twilioSendSms,
+      makeVoiceCall: twilioMakeVoiceCall
+    };
+
+    const elevenLabsSpeech = vi.fn();
+    const mockElevenLabs: ElevenLabsClient = {
+      isConfigured: () => true,
+      synthesizeSpeech: elevenLabsSpeech
+    };
+
+    const sendResult = await sendNotificationLogic(notification.id, {
+      db,
+      twilio: mockTwilio,
+      elevenLabs: mockElevenLabs
+    });
+
+    // In non-demo mode with consented contacts, carrier call is dispatched (> 0 calls)
+    expect(twilioSendSms).toHaveBeenCalledTimes(1);
+    expect(twilioSendSms).toHaveBeenCalledWith(consentedContact.phone_number, expect.stringContaining('[TRINETRA SAFETY ALERT]'));
+    expect(sendResult.status).toBe(NotificationStatus.SENT);
+    expect(sendResult.providerReference).toBe('SM_LIVE_CONFIRMED_123');
+  });
+
   it('TWILIO WEBHOOK: Validates X-Twilio-Signature strictly against TWILIO_WEBHOOK_URL secret and rejects mismatch or forgery', async () => {
     const authToken = 'mock_auth_token_secret_12345';
     const configuredWebhookUrl = 'https://safety.trinetra.live/functions/v1/twilio-webhook';

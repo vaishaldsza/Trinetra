@@ -9,6 +9,7 @@ import {
   DEMO_BANNER_LABEL
 } from '@trinetra/shared';
 import { dataProvider } from '../../lib/dataProvider';
+import { supabase } from '../../lib/supabase';
 import {
   Play,
   RotateCcw,
@@ -36,6 +37,32 @@ export default function DemoPage() {
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [executedLogs, setExecutedLogs] = useState<string[]>([]);
+  const [isAdmin, setIsAdmin] = useState(dataProvider.isMock);
+
+  useEffect(() => {
+    if (dataProvider.isMock) {
+      setIsAdmin(true);
+      return;
+    }
+    const checkRole = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+          setIsAdmin(profile?.role === 'admin');
+        } else {
+          setIsAdmin(false);
+        }
+      } catch {
+        setIsAdmin(false);
+      }
+    };
+    checkRole();
+  }, []);
 
   const activeScenario: DemoScenarioDefinition = DEMO_SCENARIOS[selectedScenarioIndex];
   const currentStep: DemoScenarioStep = activeScenario.steps[currentStepIndex];
@@ -104,17 +131,23 @@ export default function DemoPage() {
           </p>
         </div>
 
-        {/* Reset Demo Data Action */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleResetDemoData}
-            disabled={isResetting}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-700/60 text-xs font-bold text-red-200 transition shadow-sm"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
-            {isResetting ? 'Purging Demo Data...' : 'Reset Demo Data'}
-          </button>
-        </div>
+        {/* Reset Demo Data Action: Only visible/enabled in mock mode or if user is admin */}
+        {dataProvider.isMock || isAdmin ? (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleResetDemoData}
+              disabled={isResetting}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-700/60 text-xs font-bold text-red-200 transition shadow-sm"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+              {isResetting ? 'Purging Demo Data...' : 'Reset Demo Data'}
+            </button>
+          </div>
+        ) : (
+          <div className="text-[11px] text-slate-500 italic bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800">
+            Admin access required to reset live demo telemetry
+          </div>
+        )}
       </div>
 
       {resetMessage && (

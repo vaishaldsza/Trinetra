@@ -156,7 +156,7 @@ pnpm smoke
 4. **Run Scenario 2 (Critical Emergency):**
    - Companion reports `consciousness_status = 'unconscious'`.
    - Rule engine triggers immediate priority escalation to **CRITICAL**.
-   - Optical PPG pulse reading is recorded (44 BPM bradycardia estimate marked `[DEMO]`).
+   - Optical PPG pulse reading is recorded (44 BPM simulated value, non-diagnostic estimate marked `[DEMO]`).
 5. **Run Scenario 3 (Remote Trail Without Internet):**
    - Toggles simulated network disconnection (real device WiFi/cellular is untouched).
    - SOS and triage are written directly to SQLite without throwing errors.
