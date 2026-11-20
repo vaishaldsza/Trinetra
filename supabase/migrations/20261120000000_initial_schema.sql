@@ -153,7 +153,34 @@ begin
     where id = auth.uid() and role = 'admin'
   );
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
+
+-- Helper function: get user role securely
+create or replace function public.get_user_role(p_user_id uuid)
+returns public.user_role as $$
+begin
+  return (select role from public.profiles where id = p_user_id);
+end;
+$$ language plpgsql security definer set search_path = public;
+
+-- Trigger to prevent normal users from modifying their own or other users' roles
+create or replace function public.prevent_role_modification()
+returns trigger as $$
+begin
+  -- Allow service role or SQL editor (auth.uid() is null) or administrators
+  if auth.uid() is not null and not public.is_admin() then
+    if new.role is distinct from old.role then
+      raise exception 'Unauthorized: Only administrators can modify user roles';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists trg_prevent_role_modification on public.profiles;
+create trigger trg_prevent_role_modification
+  before update on public.profiles
+  for each row execute procedure public.prevent_role_modification();
 
 -- Trigger: Automatically create profile on auth.users insert
 create or replace function public.handle_new_user()
@@ -172,7 +199,7 @@ begin
     updated_at = now();
   return new;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
@@ -189,28 +216,6 @@ alter table public.vital_readings enable row level security;
 alter table public.agent_tasks enable row level security;
 alter table public.notifications enable row level security;
 alter table public.location_history enable row level security;
-
--- Helper function: get user role securely
-create or replace function public.get_user_role(p_user_id uuid)
-returns public.user_role as $$
-  select role from public.profiles where id = p_user_id;
-$$ language sql security definer stable;
-
--- Trigger to prevent normal users from modifying their own or other users' roles
-create or replace function public.prevent_role_modification()
-returns trigger as $$
-begin
-  if new.role is distinct from old.role and not public.is_admin() then
-    raise exception 'Unauthorized: Only administrators can modify user roles';
-  end if;
-  return new;
-end;
-$$ language plpgsql security definer;
-
-drop trigger if exists trg_prevent_role_modification on public.profiles;
-create trigger trg_prevent_role_modification
-  before update on public.profiles
-  for each row execute procedure public.prevent_role_modification();
 
 -- RLS Policies: Profiles
 create policy "Users can view their own profile or admin can view all"

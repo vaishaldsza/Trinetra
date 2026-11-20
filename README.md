@@ -39,8 +39,19 @@ To apply the database migrations to your Supabase project:
 supabase db reset
 # Or directly run the migration in your Supabase SQL editor:
 # supabase/migrations/20261120000000_initial_schema.sql
-# supabase/seed.sql
 ```
+
+#### Demo User Configuration
+1. In your Supabase Dashboard, navigate to **Authentication -> Users** and create two demo accounts:
+   - **Demo Hiker:** `hiker.demo@trinetra.safety` (set password, e.g. `DemoSafety123!`)
+   - **Demo Admin:** `admin.demo@trinetra.safety` (set password, e.g. `DemoSafety123!`)
+2. In the Supabase **SQL Editor**, promote the admin user to the `'admin'` role:
+   ```sql
+   UPDATE public.profiles
+   SET role = 'admin'
+   WHERE email = 'admin.demo@trinetra.safety';
+   ```
+3. Run [supabase/seed.sql](file:///d:/Trinetra/supabase/seed.sql) to populate initial demo contacts, sessions, incidents, triage reports, and agent tasks for the demo accounts.
 
 ### 5. Running the Web Platform
 ```powershell
