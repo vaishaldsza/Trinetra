@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import 'leaflet/dist/leaflet.css';
 import './globals.css';
 import { APP_NAME, APP_TAGLINE, DEMO_BANNER_LABEL } from '@trinetra/shared';
 import { isSupabaseConfigured } from '../lib/supabase';
