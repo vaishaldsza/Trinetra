@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert 
 import { useSafetyStore } from '../src/store/safetyStore';
 
 export default function SettingsScreen() {
-  const { profile, updateProfile, pendingSyncCount, syncNow, isSyncing } = useSafetyStore();
+  const { profile, updateProfile, syncCounts, syncNow, isSyncing } = useSafetyStore();
   const [fullName, setFullName] = useState(profile.full_name);
   const [phone, setPhone] = useState(profile.phone || '');
   const [isEditing, setIsEditing] = useState(false);
@@ -13,7 +13,11 @@ export default function SettingsScreen() {
       Alert.alert('Error', 'Full name is required.');
       return;
     }
-    await updateProfile(fullName.trim(), phone.trim());
+    const result = await updateProfile(fullName.trim(), phone.trim());
+    if (!result.success) {
+      Alert.alert('Validation Error', result.error || 'Invalid profile information');
+      return;
+    }
     setIsEditing(false);
     Alert.alert('Profile Saved', 'Profile updated locally in SQLite and queued for cloud sync.');
   };
@@ -68,17 +72,33 @@ export default function SettingsScreen() {
 
       {/* Offline Storage Status Card */}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Offline Storage Engine</Text>
+        <Text style={styles.sectionTitle}>Offline Storage Engine (SQLite)</Text>
 
         <View style={styles.settingItem}>
-          <Text style={styles.settingName}>Local Database</Text>
-          <Text style={[styles.settingValue, { color: '#22C55E' }]}>Expo SQLite (Active)</Text>
+          <Text style={styles.settingName}>Sync Status</Text>
+          <Text style={[styles.settingValue, { color: isSyncing ? '#38BDF8' : syncCounts.failed > 0 ? '#EF4444' : syncCounts.pending > 0 ? '#F59E0B' : '#22C55E' }]}>
+            {isSyncing ? 'Syncing...' : syncCounts.pending > 0 ? 'Pending' : 'Synced'}
+          </Text>
         </View>
 
         <View style={styles.settingItem}>
-          <Text style={styles.settingName}>Pending Sync Mutations</Text>
-          <Text style={[styles.settingValue, { color: pendingSyncCount > 0 ? '#F59E0B' : '#22C55E' }]}>
-            {pendingSyncCount} {pendingSyncCount === 1 ? 'item' : 'items'}
+          <Text style={styles.settingName}>Pending Mutations</Text>
+          <Text style={[styles.settingValue, { color: syncCounts.pending > 0 ? '#F59E0B' : '#22C55E' }]}>
+            {syncCounts.pending}
+          </Text>
+        </View>
+
+        <View style={styles.settingItem}>
+          <Text style={styles.settingName}>Synced Mutations</Text>
+          <Text style={[styles.settingValue, { color: '#22C55E' }]}>
+            {syncCounts.synced}
+          </Text>
+        </View>
+
+        <View style={styles.settingItem}>
+          <Text style={styles.settingName}>Failed (8+ attempts)</Text>
+          <Text style={[styles.settingValue, { color: syncCounts.failed > 0 ? '#EF4444' : '#64748B' }]}>
+            {syncCounts.failed}
           </Text>
         </View>
 

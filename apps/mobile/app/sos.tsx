@@ -1,12 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafetyStore } from '../src/store/safetyStore';
 
 export default function SOSScreen() {
   const router = useRouter();
-  const { activeIncident, triggerSOS, cancelSOS } = useSafetyStore();
+  const { activeIncident, triggerSOS, cancelSOS, lastKnownLocation } = useSafetyStore();
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  // Hold-to-confirm (~2s hold) state
+  const [holdProgress, setHoldProgress] = useState<number>(0);
+  const holdIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const holdStartTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
@@ -20,7 +25,7 @@ export default function SOSScreen() {
       triggerSOS().then((incident) => {
         Alert.alert(
           'EMERGENCY INITIATED',
-          `Incident #${incident.id.slice(0, 8)} saved to local SQLite. Dispatches and triage ready offline.`,
+          `Incident #${incident.id.slice(0, 8)} saved in local SQLite. Last-known GPS coords attached: ${incident.latitude?.toFixed(4)}, ${incident.longitude?.toFixed(4)}. Dispatches ready offline.`,
           [
             { text: 'Proceed to Triage', onPress: () => router.push('/triage') },
             { text: 'View Incident', onPress: () => router.push(`/incidents/${incident.id}`) }
@@ -34,8 +39,34 @@ export default function SOSScreen() {
     };
   }, [countdown, triggerSOS, router]);
 
-  const handleStartCountdown = () => {
-    setCountdown(5);
+  const handlePressIn = () => {
+    if (countdown !== null || activeIncident) return;
+    holdStartTimeRef.current = Date.now();
+    setHoldProgress(0);
+
+    holdIntervalRef.current = setInterval(() => {
+      if (!holdStartTimeRef.current) return;
+      const elapsed = Date.now() - holdStartTimeRef.current;
+      const progress = Math.min(100, Math.round((elapsed / 2000) * 100));
+      setHoldProgress(progress);
+
+      if (elapsed >= 2000) {
+        // Hold satisfied: clear interval and initiate 5-second countdown
+        if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
+        holdStartTimeRef.current = null;
+        setHoldProgress(0);
+        setCountdown(5);
+      }
+    }, 50);
+  };
+
+  const handlePressOut = () => {
+    if (holdIntervalRef.current) {
+      clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    }
+    holdStartTimeRef.current = null;
+    setHoldProgress(0);
   };
 
   const handleAbortCountdown = () => {
@@ -54,7 +85,7 @@ export default function SOSScreen() {
       <Text style={styles.title}>EMERGENCY SOS</Text>
       <Text style={styles.description}>
         Generates an idempotent client-generated incident in local SQLite.
-        Escalation occurs immediately offline and never waits on cloud, network, or AI agents.
+        Escalation occurs immediately offline and attaches last-known GPS coordinates without waiting on cloud or AI.
       </Text>
 
       {/* Countdown Active State */}
@@ -74,6 +105,9 @@ export default function SOSScreen() {
           <Text style={styles.incidentId}>ID: {activeIncident.id}</Text>
           <Text style={styles.incidentDetails}>
             Priority: {activeIncident.priority.toUpperCase()} · Status: {activeIncident.status.toUpperCase()}
+          </Text>
+          <Text style={styles.gpsCoords}>
+            GPS: {activeIncident.latitude?.toFixed(4)}° N, {activeIncident.longitude?.toFixed(4)}° E
           </Text>
 
           <View style={styles.actionButtonsRow}>
@@ -100,15 +134,35 @@ export default function SOSScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        /* Initial SOS Trigger Button */
-        <TouchableOpacity
-          style={styles.sosButton}
-          onPress={handleStartCountdown}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.sosText}>ACTIVATE SOS</Text>
-          <Text style={styles.sosSubtext}>5s Safety Countdown</Text>
-        </TouchableOpacity>
+        /* Hold-to-Confirm (~2s Hold) Button */
+        <View style={styles.buttonWrapper}>
+          <TouchableOpacity
+            style={[styles.sosButton, holdProgress > 0 && styles.sosButtonHolding]}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.sosText}>HOLD FOR SOS</Text>
+            <Text style={styles.sosSubtext}>
+              {holdProgress > 0 ? `Holding... ${holdProgress}%` : 'Hold 2s to Activate'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Hold Progress Bar */}
+          {holdProgress > 0 && (
+            <View style={styles.progressBarBackground}>
+              <View style={[styles.progressBarFill, { width: `${holdProgress}%` }]} />
+            </View>
+          )}
+        </View>
+      )}
+
+      {lastKnownLocation && (
+        <View style={styles.locationTag}>
+          <Text style={styles.locationTagText}>
+            📍 Last-Known GPS: {lastKnownLocation.latitude.toFixed(4)}° N, {lastKnownLocation.longitude.toFixed(4)}° E
+          </Text>
+        </View>
       )}
 
       <View style={styles.noticeBox}>
@@ -139,9 +193,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#94A3B8',
     textAlign: 'center',
-    marginBottom: 36,
+    marginBottom: 32,
     lineHeight: 18,
     maxWidth: 340
+  },
+  buttonWrapper: {
+    alignItems: 'center',
+    width: '100%'
   },
   sosButton: {
     width: 220,
@@ -154,9 +212,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 12
   },
+  sosButtonHolding: {
+    backgroundColor: '#B91C1C',
+    borderColor: '#F87171'
+  },
   sosText: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: 1
   },
@@ -165,6 +227,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontWeight: '600'
+  },
+  progressBarBackground: {
+    width: 220,
+    height: 8,
+    backgroundColor: '#1E293B',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginTop: 14
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#EF4444',
+    borderRadius: 4
   },
   countdownContainer: {
     alignItems: 'center',
@@ -228,13 +303,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'monospace',
     marginTop: 4,
-    marginBottom: 6
+    marginBottom: 4
   },
   incidentDetails: {
     color: '#E2E8F0',
     fontSize: 12,
     fontWeight: '600',
-    marginBottom: 18
+    marginBottom: 2
+  },
+  gpsCoords: {
+    color: '#F59E0B',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    marginBottom: 16
   },
   actionButtonsRow: {
     flexDirection: 'row',
@@ -274,8 +355,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textDecorationLine: 'underline'
   },
+  locationTag: {
+    marginTop: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155'
+  },
+  locationTagText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'monospace'
+  },
   noticeBox: {
-    marginTop: 36,
+    marginTop: 20,
     padding: 12,
     backgroundColor: '#0F172A',
     borderRadius: 8,

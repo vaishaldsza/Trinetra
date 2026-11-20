@@ -12,11 +12,13 @@ import {
   AgentName
 } from '../enums';
 
+export const E164_PHONE_REGEX = /^\+[1-9]\d{1,14}$/;
+
 export const ProfileSchema = z.object({
   id: z.string().uuid(),
   full_name: z.string().min(1, 'Full name is required'),
-  email: z.string().email(),
-  phone: z.string().nullable().optional(),
+  email: z.string().email('Valid email address is required'),
+  phone: z.string().regex(E164_PHONE_REGEX, 'Phone must be in E.164 format (e.g. +919876543210)').nullable().optional(),
   avatar_url: z.string().url().nullable().optional(),
   role: z.nativeEnum(UserRole).default(UserRole.USER),
   created_at: z.string().datetime().optional(),
@@ -27,7 +29,7 @@ export const EmergencyContactSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   contact_name: z.string().min(1, 'Contact name is required'),
-  phone_number: z.string().min(5, 'Valid phone number is required'),
+  phone_number: z.string().regex(E164_PHONE_REGEX, 'Phone number must be in E.164 format (e.g. +919876543210)'),
   relationship: z.string().min(1, 'Relationship is required'),
   priority: z.number().int().min(1).default(1),
   created_at: z.string().datetime().optional()

@@ -10,7 +10,7 @@ export default function HomeScreen() {
     initStore,
     activeSession,
     activeIncident,
-    pendingSyncCount,
+    syncCounts,
     isSyncing,
     lastSyncedAt,
     syncNow,
@@ -77,11 +77,26 @@ export default function HomeScreen() {
       {/* Offline SQLite & Sync Status Bar */}
       <View style={styles.syncBar}>
         <View style={styles.syncStatusLeft}>
-          <View style={[styles.syncDot, pendingSyncCount > 0 ? styles.syncDotPending : styles.syncDotSynced]} />
+          <View
+            style={[
+              styles.syncDot,
+              isSyncing
+                ? styles.syncDotSyncing
+                : syncCounts.failed > 0
+                ? styles.syncDotFailed
+                : syncCounts.pending > 0
+                ? styles.syncDotPending
+                : styles.syncDotSynced
+            ]}
+          />
           <View>
             <Text style={styles.syncText}>
-              {pendingSyncCount > 0
-                ? `${pendingSyncCount} offline updates queued in SQLite`
+              {isSyncing
+                ? 'Syncing with Supabase...'
+                : syncCounts.failed > 0
+                ? `${syncCounts.failed} sync failed · ${syncCounts.pending} pending`
+                : syncCounts.pending > 0
+                ? `${syncCounts.pending} offline updates queued in SQLite`
                 : 'All changes saved locally & synced'}
             </Text>
             {lastSyncedAt && (
@@ -295,6 +310,12 @@ const styles = StyleSheet.create({
   },
   syncDotPending: {
     backgroundColor: '#F59E0B'
+  },
+  syncDotSyncing: {
+    backgroundColor: '#38BDF8'
+  },
+  syncDotFailed: {
+    backgroundColor: '#EF4444'
   },
   syncText: {
     color: '#E2E8F0',

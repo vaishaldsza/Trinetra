@@ -15,7 +15,12 @@ export default function ContactsScreen() {
       return;
     }
 
-    await addContact(name.trim(), phone.trim(), relationship.trim(), contacts.length + 1);
+    const result = await addContact(name.trim(), phone.trim(), relationship.trim(), contacts.length + 1);
+    if (!result.success) {
+      Alert.alert('Validation Error', result.error || 'Invalid contact details');
+      return;
+    }
+
     setName('');
     setPhone('');
     setRelationship('');

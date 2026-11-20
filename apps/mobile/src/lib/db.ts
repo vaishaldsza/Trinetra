@@ -9,27 +9,56 @@ import {
   IncidentPriority,
   IncidentStatus,
   IncidentType,
-  DetectionSource
+  DetectionSource,
+  LocationHistory
 } from '@trinetra/shared';
 
 export interface SyncQueueItem {
   id: string;
-  table_name: 'profiles' | 'emergency_contacts' | 'hiking_sessions' | 'incidents';
+  table_name: 'profiles' | 'emergency_contacts' | 'hiking_sessions' | 'incidents' | 'location_history';
   action: 'insert' | 'update' | 'delete';
   record_id: string;
   payload_json: string;
   status: 'pending' | 'processing' | 'synced' | 'failed';
   attempts: number;
+  last_attempt_at?: string;
   created_at: string;
   updated_at: string;
 }
 
-// In-memory fallback for web environment
+export interface LocalTriageAssessment {
+  id: string;
+  incident_id: string;
+  consciousness_status: string;
+  breathing_difficulty: boolean;
+  bleeding_status: string;
+  injury_location: string;
+  mobility_status: string;
+  pain_level: number;
+  assessment_summary: string;
+  created_at: string;
+}
+
+export interface LocalNotificationRequest {
+  id: string;
+  incident_id: string;
+  contact_id?: string;
+  channel: 'sms' | 'voice';
+  recipient: string;
+  status: 'pending' | 'processing' | 'sent' | 'failed';
+  error_message?: string;
+  created_at: string;
+}
+
+// Memory Store for Web Fallback
 class MemoryStore {
   profiles = new Map<string, Profile>();
   contacts = new Map<string, EmergencyContact>();
   sessions = new Map<string, HikingSession>();
   incidents = new Map<string, Incident>();
+  locations: LocationHistory[] = [];
+  triage = new Map<string, LocalTriageAssessment>();
+  notifications = new Map<string, LocalNotificationRequest>();
   syncQueue: SyncQueueItem[] = [];
 }
 
@@ -42,74 +71,132 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase | null> {
   }
   if (!dbInstance) {
     dbInstance = await SQLite.openDatabaseAsync('trinetra_offline.db');
-    await initTables(dbInstance);
+    await runMigrations(dbInstance);
   }
   return dbInstance;
 }
 
-async function initTables(db: SQLite.SQLiteDatabase): Promise<void> {
+// Ordered migrations using schema_version table
+async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
-
-    CREATE TABLE IF NOT EXISTS local_profiles (
-      id TEXT PRIMARY KEY,
-      full_name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT,
-      avatar_url TEXT,
-      role TEXT NOT NULL DEFAULT 'user',
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS local_emergency_contacts (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      contact_name TEXT NOT NULL,
-      phone_number TEXT NOT NULL,
-      relationship TEXT NOT NULL,
-      priority INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS local_hiking_sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      start_time TEXT NOT NULL,
-      end_time TEXT,
-      start_location TEXT,
-      end_location TEXT,
-      status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS local_incidents (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      session_id TEXT,
-      incident_type TEXT NOT NULL,
-      latitude REAL,
-      longitude REAL,
-      last_known_location_at TEXT,
-      priority TEXT NOT NULL DEFAULT 'high',
-      status TEXT NOT NULL DEFAULT 'detected',
-      detection_source TEXT NOT NULL DEFAULT 'manual',
-      is_demo INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      synced_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS sync_queue (
-      id TEXT PRIMARY KEY,
-      table_name TEXT NOT NULL,
-      action TEXT NOT NULL,
-      record_id TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      attempts INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER PRIMARY KEY,
+      applied_at TEXT NOT NULL
     );
   `);
+
+  const row = await db.getFirstAsync<{ current_version: number }>(
+    `SELECT MAX(version) as current_version FROM schema_version;`
+  );
+  const currentVersion = row?.current_version || 0;
+
+  // Migration 1: Base Tables
+  if (currentVersion < 1) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS local_profiles (
+        id TEXT PRIMARY KEY,
+        full_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT,
+        avatar_url TEXT,
+        role TEXT NOT NULL DEFAULT 'user',
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS local_emergency_contacts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        contact_name TEXT NOT NULL,
+        phone_number TEXT NOT NULL,
+        relationship TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS local_hiking_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT,
+        start_location TEXT,
+        end_location TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS local_incidents (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        session_id TEXT,
+        incident_type TEXT NOT NULL,
+        latitude REAL,
+        longitude REAL,
+        last_known_location_at TEXT,
+        priority TEXT NOT NULL DEFAULT 'high',
+        status TEXT NOT NULL DEFAULT 'detected',
+        detection_source TEXT NOT NULL DEFAULT 'manual',
+        is_demo INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        synced_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        id TEXT PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO schema_version (version, applied_at) VALUES (1, datetime('now'));
+    `);
+  }
+
+  // Migration 2: Location history, triage assessments, notification requests
+  if (currentVersion < 2) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS local_location_history (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        accuracy REAL,
+        recorded_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS local_triage_assessments (
+        id TEXT PRIMARY KEY,
+        incident_id TEXT NOT NULL,
+        consciousness_status TEXT NOT NULL,
+        breathing_difficulty INTEGER NOT NULL DEFAULT 0,
+        bleeding_status TEXT NOT NULL,
+        injury_location TEXT NOT NULL,
+        mobility_status TEXT NOT NULL,
+        pain_level INTEGER NOT NULL DEFAULT 0,
+        assessment_summary TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS local_notification_requests (
+        id TEXT PRIMARY KEY,
+        incident_id TEXT NOT NULL,
+        contact_id TEXT,
+        channel TEXT NOT NULL,
+        recipient TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        error_message TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      INSERT INTO schema_version (version, applied_at) VALUES (2, datetime('now'));
+    `);
+  }
 }
 
 // ==================== PROFILE OPERATIONS ====================
@@ -262,7 +349,7 @@ export async function getLocalSessions(userId: string): Promise<HikingSession[]>
   return Array.from(memoryStore.sessions.values()).filter(s => s.user_id === userId);
 }
 
-// ==================== INCIDENTS (IDEMPOTENT CLIENT-GENERATED UUID) ====================
+// ==================== INCIDENTS ====================
 export async function saveLocalIncident(incident: Incident): Promise<void> {
   const db = await getDb();
   if (db) {
@@ -335,6 +422,67 @@ export async function getLocalIncidents(userId: string): Promise<Incident[]> {
   return Array.from(memoryStore.incidents.values()).filter(i => i.user_id === userId);
 }
 
+// ==================== LOCATION HISTORY ====================
+export async function saveLocalLocationPoint(point: LocationHistory): Promise<void> {
+  const db = await getDb();
+  if (db) {
+    await db.runAsync(
+      `INSERT INTO local_location_history (id, session_id, latitude, longitude, accuracy, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?);`,
+      [point.id, point.session_id, point.latitude, point.longitude, point.accuracy || null, point.recorded_at]
+    );
+  } else {
+    memoryStore.locations.push(point);
+  }
+}
+
+// ==================== TRIAGE & NOTIFICATIONS ====================
+export async function saveLocalTriage(triage: LocalTriageAssessment): Promise<void> {
+  const db = await getDb();
+  if (db) {
+    await db.runAsync(
+      `INSERT INTO local_triage_assessments (id, incident_id, consciousness_status, breathing_difficulty, bleeding_status, injury_location, mobility_status, pain_level, assessment_summary, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [
+        triage.id,
+        triage.incident_id,
+        triage.consciousness_status,
+        triage.breathing_difficulty ? 1 : 0,
+        triage.bleeding_status,
+        triage.injury_location,
+        triage.mobility_status,
+        triage.pain_level,
+        triage.assessment_summary,
+        triage.created_at
+      ]
+    );
+  } else {
+    memoryStore.triage.set(triage.id, triage);
+  }
+}
+
+export async function saveLocalNotificationRequest(notif: LocalNotificationRequest): Promise<void> {
+  const db = await getDb();
+  if (db) {
+    await db.runAsync(
+      `INSERT INTO local_notification_requests (id, incident_id, contact_id, channel, recipient, status, error_message, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+      [
+        notif.id,
+        notif.incident_id,
+        notif.contact_id || null,
+        notif.channel,
+        notif.recipient,
+        notif.status,
+        notif.error_message || null,
+        notif.created_at
+      ]
+    );
+  } else {
+    memoryStore.notifications.set(notif.id, notif);
+  }
+}
+
 // ==================== SYNC QUEUE OPERATIONS ====================
 export async function enqueueSync(
   id: string,
@@ -379,31 +527,62 @@ export async function getPendingSyncQueue(): Promise<SyncQueueItem[]> {
   return memoryStore.syncQueue.filter(q => q.status === 'pending');
 }
 
-export async function markSyncQueueItem(id: string, status: 'synced' | 'failed'): Promise<void> {
+export async function updateSyncItemResult(
+  id: string,
+  status: 'synced' | 'pending' | 'failed',
+  incrementAttempt = true
+): Promise<void> {
   const now = new Date().toISOString();
   const db = await getDb();
   if (db) {
-    await db.runAsync(
-      `UPDATE sync_queue SET status = ?, attempts = attempts + 1, updated_at = ? WHERE id = ?;`,
-      [status, now, id]
-    );
+    if (incrementAttempt) {
+      await db.runAsync(
+        `UPDATE sync_queue SET status = ?, attempts = attempts + 1, last_attempt_at = ?, updated_at = ? WHERE id = ?;`,
+        [status, now, now, id]
+      );
+    } else {
+      await db.runAsync(
+        `UPDATE sync_queue SET status = ?, updated_at = ? WHERE id = ?;`,
+        [status, now, id]
+      );
+    }
   } else {
     const item = memoryStore.syncQueue.find(q => q.id === id);
     if (item) {
       item.status = status;
-      item.attempts += 1;
+      if (incrementAttempt) item.attempts += 1;
+      item.last_attempt_at = now;
       item.updated_at = now;
     }
   }
 }
 
-export async function getPendingCount(): Promise<number> {
+export interface SyncStatusCounts {
+  pending: number;
+  synced: number;
+  failed: number;
+}
+
+export async function getSyncStatusCounts(): Promise<SyncStatusCounts> {
   const db = await getDb();
   if (db) {
-    const row = await db.getFirstAsync<{ count: number }>(
-      `SELECT count(*) as count FROM sync_queue WHERE status = 'pending';`
+    const rows = await db.getAllAsync<{ status: string; count: number }>(
+      `SELECT status, count(*) as count FROM sync_queue GROUP BY status;`
     );
-    return row?.count || 0;
+    const counts: SyncStatusCounts = { pending: 0, synced: 0, failed: 0 };
+    for (const r of rows) {
+      if (r.status === 'pending') counts.pending = r.count;
+      else if (r.status === 'synced') counts.synced = r.count;
+      else if (r.status === 'failed') counts.failed = r.count;
+    }
+    return counts;
   }
-  return memoryStore.syncQueue.filter(q => q.status === 'pending').length;
+
+  const counts: SyncStatusCounts = { pending: 0, synced: 0, failed: 0 };
+  for (const q of memoryStore.syncQueue) {
+    if (q.status === 'pending') counts.pending++;
+    else if (q.status === 'synced') counts.synced++;
+    else if (q.status === 'failed') counts.failed++;
+  }
+  return counts;
 }
