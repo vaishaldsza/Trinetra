@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Vibration } from 'react-native';
 import { useRouter } from 'expo-router';
-import { DEMO_BANNER_LABEL } from '@trinetra/shared';
+import { useTranslation } from 'react-i18next';
 import { useSafetyStore } from '../store/safetyStore';
+import { useTheme } from '../theme/ThemeContext';
 
 export function FallAlertModal() {
   const router = useRouter();
+  const { t } = useTranslation();
+  const { colors, isDark } = useTheme();
   const {
     showFallAlertModal,
     fallCountdownSeconds,
@@ -60,7 +63,6 @@ export function FallAlertModal() {
       Vibration.cancel();
     } catch {}
     const incident = await confirmFallSOS();
-    // Confirmed fall skips secondary countdown and routes straight to active incident
     router.push(`/incidents/${incident.id}`);
   };
 
@@ -78,42 +80,53 @@ export function FallAlertModal() {
       animationType="fade"
       onRequestClose={handleDismiss}
     >
-      <View style={styles.overlay}>
-        <View style={styles.card}>
-          <View style={styles.headerBadge}>
-            <Text style={styles.badgeLabel}>{DEMO_BANNER_LABEL} SENSOR MONITOR</Text>
+      <View style={[styles.overlay, { backgroundColor: isDark ? 'rgba(2, 6, 23, 0.92)' : 'rgba(15, 23, 42, 0.75)' }]}>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.danger }]}>
+          <View style={[styles.headerBadge, { backgroundColor: colors.dangerSurface }]}>
+            <Text style={[styles.badgeLabel, { color: colors.dangerText }]}>
+              {t('fall.badge')}
+            </Text>
           </View>
 
           <Text style={styles.icon}>⚠️</Text>
-          <Text style={styles.title}>POTENTIAL FALL DETECTED</Text>
-          <Text style={styles.description}>
-            Rapid acceleration followed by impact and immobility was detected on your device.
+          <Text style={[styles.title, { color: colors.text }]}>{t('fall.title')}</Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
+            {t('fall.description')}
           </Text>
 
-          <View style={styles.countdownContainer}>
-            <Text style={styles.countdownNumber}>{fallCountdownSeconds ?? 30}</Text>
-            <Text style={styles.countdownLabel}>SECONDS UNTIL AUTOMATIC SOS</Text>
+          {/* High-Contrast Countdown Box for outdoor sunlight visibility */}
+          <View style={[styles.countdownContainer, { backgroundColor: colors.fallCountdownBg }]}>
+            <Text style={[styles.countdownNumber, { color: colors.fallCountdownText }]}>
+              {fallCountdownSeconds ?? 30}
+            </Text>
+            <Text style={[styles.countdownLabel, { color: colors.fallCountdownText }]}>
+              {t('fall.countdown_label')}
+            </Text>
           </View>
 
-          <Text style={styles.helperText}>
-            If you do not respond, emergency escalation will dispatch alerts to your emergency contacts.
+          <Text style={[styles.helperText, { color: colors.mutedText }]}>
+            {t('fall.helper_text')}
           </Text>
 
           <View style={styles.buttonStack}>
             <TouchableOpacity
-              style={styles.sosButton}
+              style={[styles.sosButton, { backgroundColor: colors.sosButtonBg }]}
               onPress={handleConfirm}
               activeOpacity={0.8}
             >
-              <Text style={styles.sosButtonText}>🚨 I NEED HELP (TRIGGER SOS)</Text>
+              <Text style={[styles.sosButtonText, { color: colors.sosButtonText }]}>
+                🚨 {t('fall.confirm_sos_btn')}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.dismissButton}
+              style={[styles.dismissButton, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
               onPress={handleDismiss}
               activeOpacity={0.8}
             >
-              <Text style={styles.dismissButtonText}>✓ I AM OK (CANCEL ALERT)</Text>
+              <Text style={[styles.dismissButtonText, { color: colors.text }]}>
+                ✓ {t('fall.false_alarm_btn')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -125,14 +138,11 @@ export function FallAlertModal() {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 6, 23, 0.88)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20
   },
   card: {
-    backgroundColor: '#0F172A',
-    borderColor: '#DC2626',
     borderWidth: 2,
     borderRadius: 16,
     padding: 24,
@@ -146,14 +156,12 @@ const styles = StyleSheet.create({
     elevation: 10
   },
   headerBadge: {
-    backgroundColor: '#7F1D1D',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
     marginBottom: 12
   },
   badgeLabel: {
-    color: '#FECACA',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5
@@ -163,7 +171,6 @@ const styles = StyleSheet.create({
     marginBottom: 8
   },
   title: {
-    color: '#F8FAFC',
     fontSize: 20,
     fontWeight: '900',
     textAlign: 'center',
@@ -171,70 +178,65 @@ const styles = StyleSheet.create({
     marginBottom: 8
   },
   description: {
-    color: '#94A3B8',
     fontSize: 13,
-    textAlign: 'center',
     lineHeight: 18,
+    textAlign: 'center',
     marginBottom: 16
   },
   countdownContainer: {
-    alignItems: 'center',
-    backgroundColor: '#1E293B',
-    borderColor: '#EF4444',
-    borderWidth: 1,
-    borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 24,
-    width: '100%',
-    marginBottom: 12
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+    width: '100%'
   },
   countdownNumber: {
-    color: '#EF4444',
     fontSize: 48,
     fontWeight: '900',
-    fontFamily: 'monospace'
+    lineHeight: 52
   },
   countdownLabel: {
-    color: '#94A3B8',
     fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
     marginTop: 2
   },
   helperText: {
-    color: '#64748B',
     fontSize: 11,
+    lineHeight: 15,
     textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 16
+    marginBottom: 20
   },
   buttonStack: {
     width: '100%',
     gap: 10
   },
   sosButton: {
-    backgroundColor: '#B91C1C',
     paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center'
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4
   },
   sosButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
     fontSize: 14,
+    fontWeight: '900',
     letterSpacing: 0.5
   },
   dismissButton: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
+    paddingVertical: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center'
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   dismissButtonText: {
-    color: '#E2E8F0',
-    fontWeight: '700',
-    fontSize: 13
+    fontSize: 13,
+    fontWeight: '700'
   }
 });

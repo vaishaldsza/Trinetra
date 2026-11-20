@@ -1,12 +1,20 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { HEALTH_DISCLAIMER } from '@trinetra/shared';
+import { useTranslation } from 'react-i18next';
 import { useSafetyStore } from '../src/store/safetyStore';
 import { processPpgSignal } from '../src/lib/ppg';
+import { useTheme } from '../src/theme/ThemeContext';
+import { ColorTokens } from '../src/theme/tokens';
+import { formatBpm, formatNumber, SupportedLanguage } from '../src/i18n';
 
 export default function VitalsScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const { t, i18n } = useTranslation();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const currentLang = (i18n.language || 'en').split('-')[0] as SupportedLanguage;
+
   const { activeIncident, recordVitalReading } = useSafetyStore();
 
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -31,10 +39,10 @@ export default function VitalsScreen() {
         const targetFreq = targetBpm / 60; // 1.8 Hz or 1.2 Hz
 
         for (let i = 0; i < 30; i++) {
-          const t = elapsedSec + i / 30;
+          const tVal = elapsedSec + i / 30;
           // Simulated red-channel finger absorption wave + mild noise
-          const cardiacWave = Math.sin(2 * Math.PI * targetFreq * t);
-          const baselineDrift = 0.08 * Math.sin(2 * Math.PI * 0.15 * t);
+          const cardiacWave = Math.sin(2 * Math.PI * targetFreq * tVal);
+          const baselineDrift = 0.08 * Math.sin(2 * Math.PI * 0.15 * tVal);
           const noise = 0.04 * (Math.random() - 0.5);
           opticalBufferRef.current.push(cardiacWave + baselineDrift + noise);
         }
@@ -50,24 +58,28 @@ export default function VitalsScreen() {
       setIsMeasuring(false);
       const ppgResult = processPpgSignal(opticalBufferRef.current, 30);
 
-      if (ppgResult.bpm !== null) {
-        setEstimatedBpm(ppgResult.bpm);
+      const computedBpm = ppgResult.bpm;
+      if (computedBpm !== null) {
+        setEstimatedBpm(computedBpm);
         setSignalQuality(ppgResult.signalQuality);
 
-        recordVitalReading(ppgResult.bpm, ppgResult.signalQuality, true).then(() => {
+        recordVitalReading(computedBpm, ppgResult.signalQuality, true).then(() => {
           Alert.alert(
-            'Measurement Complete',
-            `Computed Pulse: ${ppgResult.bpm} BPM (Signal Quality: ${(ppgResult.signalQuality * 100).toFixed(0)}%).\n\nSimulated [DEMO] - Saved to local SQLite record.`,
-            [{ text: 'OK' }]
+            t('vitals.measurementComplete'),
+            t('vitals.computedPulseAlert', {
+              bpm: formatNumber(computedBpm, currentLang),
+              quality: formatNumber(Math.round(ppgResult.signalQuality * 100), currentLang)
+            }),
+            [{ text: t('common.ok') }]
           );
         });
       } else {
         setEstimatedBpm(null);
         setSignalQuality(ppgResult.signalQuality);
         Alert.alert(
-          'Low Signal Quality',
-          'Could not detect a stable pulse rhythm. Please ensure your finger covers the sensor and hold steady.',
-          [{ text: 'OK' }]
+          t('vitals.lowSignalQuality'),
+          t('vitals.lowSignalDesc'),
+          [{ text: t('common.ok') }]
         );
       }
     }
@@ -76,7 +88,7 @@ export default function VitalsScreen() {
       if (timer) clearTimeout(timer);
       if (waveInterval) clearInterval(waveInterval);
     };
-  }, [isMeasuring, secondsRemaining, activeIncident, recordVitalReading]);
+  }, [isMeasuring, secondsRemaining, activeIncident, recordVitalReading, t, currentLang]);
 
   const handleStartMeasurement = () => {
     opticalBufferRef.current = [];
@@ -94,10 +106,8 @@ export default function VitalsScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Camera Vital Estimation (PPG)</Text>
-      <Text style={styles.description}>
-        Experimental pulse estimation using rear camera red-channel absorption analysis.
-      </Text>
+      <Text style={styles.title}>{t('vitals.title')}</Text>
+      <Text style={styles.description}>{t('vitals.description')}</Text>
 
       {/* PPG Sensor Viewport */}
       <View style={styles.sensorCard}>
@@ -109,15 +119,17 @@ export default function VitalsScreen() {
 
         <Text style={styles.instructionText}>
           {isMeasuring
-            ? 'Hold phone steady. Gently cover the rear camera lens & flash.'
-            : 'Place your index finger over the rear camera lens and flash, then tap Start.'}
+            ? t('vitals.holdSteadyInstruction')
+            : t('vitals.placeFingerInstruction')}
         </Text>
 
         {/* Live Measurement HUD */}
         {isMeasuring ? (
           <View style={styles.measuringBox}>
-            <Text style={styles.countdownNumber}>{secondsRemaining}s</Text>
-            <Text style={styles.measuringLabel}>PROCESSING RED-CHANNEL PPG ABSORPTION</Text>
+            <Text style={styles.countdownNumber}>
+              {formatNumber(secondsRemaining, currentLang)}s
+            </Text>
+            <Text style={styles.measuringLabel}>{t('vitals.processingAbsorption')}</Text>
 
             {/* Simulated Live PPG Waveform Bars */}
             <View style={styles.waveformContainer}>
@@ -134,38 +146,46 @@ export default function VitalsScreen() {
               ))}
             </View>
 
-            <TouchableOpacity style={styles.abortButton} onPress={handleCancel}>
-              <Text style={styles.abortText}>Cancel</Text>
+            <TouchableOpacity
+              style={styles.abortButton}
+              onPress={handleCancel}
+              accessibilityRole="button"
+            >
+              <Text style={styles.abortText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         ) : estimatedBpm !== null ? (
           <View style={styles.resultBox}>
-            <Text style={styles.resultLabel}>COMPUTED PULSE (PPG DSP)</Text>
+            <Text style={styles.resultLabel}>{t('vitals.computedPulse')}</Text>
             <View style={styles.bpmRow}>
               <Text style={styles.resultValue}>
-                {estimatedBpm} <Text style={styles.unitText}>BPM</Text>
+                {formatBpm(estimatedBpm, currentLang)}
               </Text>
               <View style={styles.demoBadge}>
-                <Text style={styles.demoBadgeText}>Simulated [DEMO]</Text>
+                <Text style={styles.demoBadgeText}>{t('vitals.simulatedDemo')}</Text>
               </View>
             </View>
             <Text style={styles.qualityText}>
-              Signal Quality: {((signalQuality || 0.9) * 100).toFixed(0)}% · 30s Optical DSP Duration
+              {t('vitals.signalQualityText', {
+                quality: formatNumber(Math.round((signalQuality || 0.9) * 100), currentLang)
+              })}
             </Text>
 
             <TouchableOpacity
               style={styles.retestButton}
               onPress={handleStartMeasurement}
+              accessibilityRole="button"
             >
-              <Text style={styles.retestButtonText}>Retest Vitals</Text>
+              <Text style={styles.retestButtonText}>{t('vitals.retest')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
             style={styles.startButton}
             onPress={handleStartMeasurement}
+            accessibilityRole="button"
           >
-            <Text style={styles.startButtonText}>Start 30s PPG Measurement</Text>
+            <Text style={styles.startButtonText}>{t('vitals.startMeasurement')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -174,210 +194,206 @@ export default function VitalsScreen() {
       <View style={styles.disclaimerCard}>
         <View style={styles.disclaimerHeader}>
           <Text style={styles.warningEmoji}>⚠️</Text>
-          <Text style={styles.disclaimerHeading}>NON-DIAGNOSTIC RESEARCH ESTIMATION</Text>
+          <Text style={styles.disclaimerHeading}>{t('vitals.nonDiagnosticHeading')}</Text>
         </View>
-        <Text style={styles.disclaimerText}>{HEALTH_DISCLAIMER}</Text>
+        <Text style={styles.disclaimerText}>{t('vitals.healthDisclaimer')}</Text>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#020617',
-    padding: 20
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 6
-  },
-  description: {
-    fontSize: 13,
-    color: '#94A3B8',
-    marginBottom: 20,
-    lineHeight: 18
-  },
-  sensorCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    marginBottom: 20
-  },
-  cameraFrame: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: '#020617',
-    borderWidth: 3,
-    borderColor: '#334155',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16
-  },
-  redLight: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#450A0A',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  redLightPulsing: {
-    backgroundColor: '#991B1B'
-  },
-  heartEmoji: {
-    fontSize: 32
-  },
-  instructionText: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
-    maxWidth: 280
-  },
-  measuringBox: {
-    alignItems: 'center',
-    width: '100%'
-  },
-  countdownNumber: {
-    fontSize: 42,
-    fontWeight: '900',
-    color: '#F43F5E',
-    fontFamily: 'monospace'
-  },
-  measuringLabel: {
-    color: '#FB7185',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginVertical: 8
-  },
-  waveformContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 28,
-    gap: 4,
-    marginVertical: 12
-  },
-  waveformBar: {
-    width: 4,
-    backgroundColor: '#F43F5E',
-    borderRadius: 2
-  },
-  abortButton: {
-    marginTop: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 16
-  },
-  abortText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    textDecorationLine: 'underline'
-  },
-  resultBox: {
-    alignItems: 'center',
-    width: '100%'
-  },
-  resultLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5
-  },
-  bpmRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginVertical: 4
-  },
-  resultValue: {
-    fontSize: 54,
-    fontWeight: '900',
-    color: '#F43F5E'
-  },
-  demoBadge: {
-    backgroundColor: '#78350F',
-    borderColor: '#F59E0B',
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4
-  },
-  demoBadgeText: {
-    color: '#FDE68A',
-    fontSize: 11,
-    fontWeight: '800'
-  },
-  unitText: {
-    fontSize: 18,
-    color: '#94A3B8',
-    fontWeight: '600'
-  },
-  qualityText: {
-    color: '#4ADE80',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 16
-  },
-  retestButton: {
-    backgroundColor: '#1E293B',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155'
-  },
-  retestButtonText: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '600'
-  },
-  startButton: {
-    backgroundColor: '#EA580C',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 10,
-    width: '100%',
-    alignItems: 'center'
-  },
-  startButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700'
-  },
-  disclaimerCard: {
-    backgroundColor: '#1E1B4B',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#F59E0B'
-  },
-  disclaimerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6
-  },
-  warningEmoji: {
-    fontSize: 16
-  },
-  disclaimerHeading: {
-    color: '#FDE68A',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5
-  },
-  disclaimerText: {
-    color: '#CBD5E1',
-    fontSize: 11,
-    lineHeight: 16
-  }
-});
+const createStyles = (colors: ColorTokens) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      padding: 20
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.text,
+      marginBottom: 6
+    },
+    description: {
+      fontSize: 13,
+      color: colors.mutedText,
+      marginBottom: 20,
+      lineHeight: 18
+    },
+    sensorCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 24,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: 20
+    },
+    cameraFrame: {
+      width: 110,
+      height: 110,
+      borderRadius: 55,
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 3,
+      borderColor: colors.borderStrong,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 16
+    },
+    redLight: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center'
+    },
+    redLightPulsing: {
+      backgroundColor: colors.danger
+    },
+    heartEmoji: {
+      fontSize: 32
+    },
+    instructionText: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      textAlign: 'center',
+      lineHeight: 18,
+      marginBottom: 20,
+      maxWidth: 280
+    },
+    measuringBox: {
+      alignItems: 'center',
+      width: '100%'
+    },
+    countdownNumber: {
+      fontSize: 42,
+      fontWeight: '900',
+      color: colors.danger,
+      fontFamily: 'monospace'
+    },
+    measuringLabel: {
+      color: colors.danger,
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      marginVertical: 8
+    },
+    waveformContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 28,
+      gap: 4,
+      marginVertical: 12
+    },
+    waveformBar: {
+      width: 4,
+      backgroundColor: colors.danger,
+      borderRadius: 2
+    },
+    abortButton: {
+      marginTop: 12,
+      paddingVertical: 6,
+      paddingHorizontal: 16
+    },
+    abortText: {
+      color: colors.mutedText,
+      fontSize: 12,
+      textDecorationLine: 'underline'
+    },
+    resultBox: {
+      alignItems: 'center',
+      width: '100%'
+    },
+    resultLabel: {
+      color: colors.mutedText,
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.5
+    },
+    bpmRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginVertical: 4
+    },
+    resultValue: {
+      fontSize: 42,
+      fontWeight: '900',
+      color: colors.danger
+    },
+    demoBadge: {
+      backgroundColor: colors.demoBannerBg,
+      borderColor: colors.borderStrong,
+      borderWidth: 1,
+      borderRadius: 6,
+      paddingHorizontal: 8,
+      paddingVertical: 4
+    },
+    demoBadgeText: {
+      color: colors.demoBannerText,
+      fontSize: 11,
+      fontWeight: '800'
+    },
+    qualityText: {
+      color: colors.success,
+      fontSize: 12,
+      fontWeight: '600',
+      marginBottom: 16
+    },
+    retestButton: {
+      backgroundColor: colors.surfaceElevated,
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    retestButtonText: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '600'
+    },
+    startButton: {
+      backgroundColor: colors.primary,
+      paddingVertical: 14,
+      paddingHorizontal: 28,
+      borderRadius: 10,
+      width: '100%',
+      alignItems: 'center'
+    },
+    startButtonText: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: '700'
+    },
+    disclaimerCard: {
+      backgroundColor: colors.surface,
+      padding: 16,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: colors.warning
+    },
+    disclaimerHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 6
+    },
+    warningEmoji: {
+      fontSize: 16
+    },
+    disclaimerHeading: {
+      color: colors.warning,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.5
+    },
+    disclaimerText: {
+      color: colors.mutedText,
+      fontSize: 11,
+      lineHeight: 16
+    }
+  });

@@ -1,33 +1,37 @@
 import { Tabs } from 'expo-router';
-import { View, Text } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../src/theme/ThemeContext';
 
 export default function TabsLayout() {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: '#0F172A' },
-        headerTintColor: '#FFFFFF',
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: 'bold' },
         tabBarStyle: {
-          backgroundColor: '#0F172A',
-          borderTopColor: '#1E293B'
+          backgroundColor: colors.tabBarBackground,
+          borderTopColor: colors.tabBarBorder
         },
-        tabBarActiveTintColor: '#EA580C',
-        tabBarInactiveTintColor: '#64748B'
+        tabBarActiveTintColor: colors.tabBarActive,
+        tabBarInactiveTintColor: colors.tabBarInactive
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          title: 'TRINETRA Safety',
-          tabBarLabel: 'Home'
+          title: t('common.app_name'),
+          tabBarLabel: t('nav.home')
         }}
       />
       <Tabs.Screen
         name="demo"
         options={{
-          title: 'Demo Scenarios',
-          tabBarLabel: 'Scenarios'
+          title: t('demo.title'),
+          tabBarLabel: t('nav.scenarios')
         }}
       />
     </Tabs>

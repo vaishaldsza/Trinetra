@@ -1,20 +1,21 @@
+import { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useSafetyStore } from '../src/store/safetyStore';
+import { useTheme } from '../src/theme/ThemeContext';
+import { ColorTokens } from '../src/theme/tokens';
+import { formatDate, SupportedLanguage } from '../src/i18n';
 
 export default function HistoryScreen() {
+  const { colors } = useTheme();
+  const { t, i18n } = useTranslation();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const currentLang = (i18n.language || 'en').split('-')[0] as SupportedLanguage;
+
   const { pastSessions } = useSafetyStore();
 
-  const formatDate = (dateStr: string) => {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-    } catch {
-      return dateStr;
-    }
-  };
-
   const calculateDuration = (startStr: string, endStr?: string | null) => {
-    if (!endStr) return 'Active';
+    if (!endStr) return t('history.active');
     try {
       const diffMs = new Date(endStr).getTime() - new Date(startStr).getTime();
       const mins = Math.max(1, Math.round(diffMs / 60000));
@@ -23,7 +24,7 @@ export default function HistoryScreen() {
         const remMins = mins % 60;
         return `${hrs}h ${remMins}m`;
       }
-      return `${mins} mins`;
+      return `${mins}m`;
     } catch {
       return '--';
     }
@@ -31,18 +32,14 @@ export default function HistoryScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Hiking Session History</Text>
-      <Text style={styles.description}>
-        Recorded hiking trails and safety sessions stored in phone SQLite.
-      </Text>
+      <Text style={styles.title}>{t('history.title')}</Text>
+      <Text style={styles.description}>{t('history.description')}</Text>
 
       {pastSessions.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyEmoji}>🏔️</Text>
-          <Text style={styles.emptyHeading}>No Completed Sessions</Text>
-          <Text style={styles.emptyText}>
-            Start and complete a hiking safety session to preserve trip timelines and trail metrics.
-          </Text>
+          <Text style={styles.emptyHeading}>{t('history.empty_heading')}</Text>
+          <Text style={styles.emptyText}>{t('history.empty_text')}</Text>
         </View>
       ) : (
         <View style={styles.list}>
@@ -51,17 +48,19 @@ export default function HistoryScreen() {
             return (
               <View key={session.id} style={styles.sessionCard}>
                 <View style={styles.row}>
-                  <Text style={styles.trail}>{loc?.trail || 'Mountain Trail'}</Text>
-                  <Text style={styles.badge}>COMPLETED</Text>
+                  <Text style={styles.trail}>
+                    {loc?.trail || t('history.mountain_trail')}
+                  </Text>
+                  <Text style={styles.badge}>{t('history.completed')}</Text>
                 </View>
 
                 <Text style={styles.date}>
-                  {formatDate(session.start_time)} · {calculateDuration(session.start_time, session.end_time)}
-                  {loc?.altitude_m ? ` · ${loc.altitude_m}m altitude` : ''}
+                  {formatDate(session.start_time, currentLang)} · {calculateDuration(session.start_time, session.end_time)}
+                  {loc?.altitude_m ? ` ${t('history.altitude_m', { altitude: loc.altitude_m })}` : ''}
                 </Text>
 
                 <Text style={styles.meta}>
-                  ID: {session.id.slice(0, 8)} · Persisted in SQLite
+                  {t('history.persisted_sqlite', { id: session.id.slice(0, 8) })}
                 </Text>
               </View>
             );
@@ -72,87 +71,90 @@ export default function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    backgroundColor: '#020617',
-    flexGrow: 1
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 6
-  },
-  description: {
-    fontSize: 13,
-    color: '#94A3B8',
-    marginBottom: 20
-  },
-  emptyCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 14,
-    padding: 28,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    marginTop: 20
-  },
-  emptyEmoji: {
-    fontSize: 40,
-    marginBottom: 10
-  },
-  emptyHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#F8FAFC',
-    marginBottom: 6
-  },
-  emptyText: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 18,
-    maxWidth: 260
-  },
-  list: {
-    gap: 12
-  },
-  sessionCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1E293B'
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4
-  },
-  trail: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF'
-  },
-  badge: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#4ADE80',
-    backgroundColor: '#052E16',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4
-  },
-  date: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginBottom: 4
-  },
-  meta: {
-    fontSize: 11,
-    color: '#F59E0B',
-    fontFamily: 'monospace'
-  }
-});
+const createStyles = (colors: ColorTokens) =>
+  StyleSheet.create({
+    container: {
+      padding: 20,
+      backgroundColor: colors.background,
+      flexGrow: 1
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.text,
+      marginBottom: 6
+    },
+    description: {
+      fontSize: 13,
+      color: colors.mutedText,
+      marginBottom: 20
+    },
+    emptyCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 28,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginTop: 20
+    },
+    emptyEmoji: {
+      fontSize: 40,
+      marginBottom: 10
+    },
+    emptyHeading: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 6
+    },
+    emptyText: {
+      fontSize: 12,
+      color: colors.mutedText,
+      textAlign: 'center',
+      lineHeight: 18,
+      maxWidth: 260
+    },
+    list: {
+      gap: 12
+    },
+    sessionCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4
+    },
+    trail: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text
+    },
+    badge: {
+      fontSize: 10,
+      fontWeight: 'bold',
+      color: colors.success,
+      backgroundColor: colors.surfaceElevated,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    date: {
+      fontSize: 12,
+      color: colors.mutedText,
+      marginBottom: 4
+    },
+    meta: {
+      fontSize: 11,
+      color: colors.mutedText,
+      fontFamily: 'monospace'
+    }
+  });

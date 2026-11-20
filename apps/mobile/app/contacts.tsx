@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useSafetyStore } from '../src/store/safetyStore';
+import { useTheme } from '../src/theme/ThemeContext';
+import { ColorTokens } from '../src/theme/tokens';
+import { formatNumber, SupportedLanguage } from '../src/i18n';
 
 export default function ContactsScreen() {
+  const { colors } = useTheme();
+  const { t, i18n } = useTranslation();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const currentLang = (i18n.language || 'en').split('-')[0] as SupportedLanguage;
+
   const { contacts, addContact, removeContact } = useSafetyStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState('');
@@ -11,13 +20,13 @@ export default function ContactsScreen() {
 
   const handleSaveContact = async () => {
     if (!name.trim() || !phone.trim() || !relationship.trim()) {
-      Alert.alert('Required Fields', 'Please fill in name, phone number, and relationship.');
+      Alert.alert(t('contacts.requiredFields'), t('contacts.requiredFieldsMsg'));
       return;
     }
 
     const result = await addContact(name.trim(), phone.trim(), relationship.trim(), contacts.length + 1);
     if (!result.success) {
-      Alert.alert('Validation Error', result.error || 'Invalid contact details');
+      Alert.alert(t('common.error'), result.error || 'Invalid contact details');
       return;
     }
 
@@ -29,12 +38,12 @@ export default function ContactsScreen() {
 
   const handleDelete = (id: string, contactName: string) => {
     Alert.alert(
-      'Remove Contact',
-      `Are you sure you want to remove ${contactName}?`,
+      t('contacts.removeContactTitle'),
+      t('contacts.removeContactConfirm', { name: contactName }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('contacts.remove'),
           style: 'destructive',
           onPress: async () => {
             await removeContact(id);
@@ -46,56 +55,58 @@ export default function ContactsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Emergency Contacts</Text>
-      <Text style={styles.description}>
-        Contacts stored locally in SQLite to receive automated alerts during an emergency.
-      </Text>
+      <Text style={styles.title}>{t('contacts.title')}</Text>
+      <Text style={styles.description}>{t('contacts.description')}</Text>
 
       {/* Add Contact Modal / Section */}
       {showAddForm ? (
         <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Add New Trusted Contact</Text>
+          <Text style={styles.formTitle}>{t('contacts.addNewContactTitle')}</Text>
 
-          <Text style={styles.label}>FULL NAME</Text>
+          <Text style={styles.label}>{t('contacts.fullName')}</Text>
           <TextInput
             style={styles.input}
             value={name}
             onChangeText={setName}
-            placeholder="e.g. Vikram Sharma"
-            placeholderTextColor="#64748B"
+            placeholder={t('contacts.namePlaceholder')}
+            placeholderTextColor={colors.mutedText}
           />
 
-          <Text style={styles.label}>PHONE NUMBER</Text>
+          <Text style={styles.label}>{t('contacts.phoneNumber')}</Text>
           <TextInput
             style={styles.input}
             value={phone}
             onChangeText={setPhone}
-            placeholder="e.g. +91 98765 43219"
-            placeholderTextColor="#64748B"
+            placeholder={t('contacts.phonePlaceholder')}
+            placeholderTextColor={colors.mutedText}
             keyboardType="phone-pad"
           />
 
-          <Text style={styles.label}>RELATIONSHIP</Text>
+          <Text style={styles.label}>{t('contacts.relationship')}</Text>
           <TextInput
             style={styles.input}
             value={relationship}
             onChangeText={setRelationship}
-            placeholder="e.g. Sibling, Parent, Mountain Guide"
-            placeholderTextColor="#64748B"
+            placeholder={t('contacts.relationPlaceholder')}
+            placeholderTextColor={colors.mutedText}
           />
 
           <View style={styles.formButtonRow}>
             <TouchableOpacity style={styles.saveButton} onPress={handleSaveContact}>
-              <Text style={styles.saveButtonText}>Save Contact</Text>
+              <Text style={styles.saveButtonText}>{t('contacts.saveContact')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.cancelButton} onPress={() => setShowAddForm(false)}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         </View>
       ) : (
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowAddForm(true)}>
-          <Text style={styles.buttonText}>+ Add Trusted Contact</Text>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowAddForm(true)}
+          accessibilityRole="button"
+        >
+          <Text style={styles.buttonText}>{t('contacts.addTrustedContact')}</Text>
         </TouchableOpacity>
       )}
 
@@ -104,16 +115,18 @@ export default function ContactsScreen() {
         {contacts.map((contact) => (
           <View key={contact.id} style={styles.contactCard}>
             <View style={styles.row}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{contact.contact_name}</Text>
                 <Text style={styles.relation}>
                   {contact.relationship} · {contact.phone_number}
                 </Text>
               </View>
               <View style={styles.badgeCol}>
-                <Text style={styles.priority}>Priority {contact.priority}</Text>
+                <Text style={styles.priority}>
+                  {t('contacts.priorityLabel', { num: formatNumber(contact.priority, currentLang) })}
+                </Text>
                 <TouchableOpacity onPress={() => handleDelete(contact.id, contact.contact_name)}>
-                  <Text style={styles.deleteText}>Remove</Text>
+                  <Text style={styles.deleteText}>{t('contacts.remove')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -124,138 +137,143 @@ export default function ContactsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    backgroundColor: '#020617',
-    flexGrow: 1
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 6
-  },
-  description: {
-    fontSize: 13,
-    color: '#94A3B8',
-    marginBottom: 20,
-    lineHeight: 18
-  },
-  addButton: {
-    backgroundColor: '#EA580C',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 20
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700'
-  },
-  formCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-    marginBottom: 20
-  },
-  formTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#F8FAFC',
-    marginBottom: 12
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginBottom: 4,
-    letterSpacing: 0.5
-  },
-  input: {
-    backgroundColor: '#020617',
-    borderWidth: 1,
-    borderColor: '#334155',
-    color: '#FFFFFF',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 12
-  },
-  formButtonRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 6
-  },
-  saveButton: {
-    flex: 1,
-    backgroundColor: '#15803D',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700'
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#334155',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  cancelButtonText: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    fontWeight: '600'
-  },
-  list: {
-    gap: 12
-  },
-  contactCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1E293B'
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  name: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 2
-  },
-  relation: {
-    fontSize: 12,
-    color: '#94A3B8'
-  },
-  badgeCol: {
-    alignItems: 'flex-end',
-    gap: 6
-  },
-  priority: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#F97316',
-    backgroundColor: '#431407',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4
-  },
-  deleteText: {
-    color: '#EF4444',
-    fontSize: 11,
-    textDecorationLine: 'underline'
-  }
-});
+const createStyles = (colors: ColorTokens) =>
+  StyleSheet.create({
+    container: {
+      padding: 20,
+      backgroundColor: colors.background,
+      flexGrow: 1
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.text,
+      marginBottom: 6
+    },
+    description: {
+      fontSize: 13,
+      color: colors.mutedText,
+      marginBottom: 20,
+      lineHeight: 18
+    },
+    addButton: {
+      backgroundColor: colors.primary,
+      paddingVertical: 14,
+      borderRadius: 10,
+      alignItems: 'center',
+      marginBottom: 20
+    },
+    buttonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700'
+    },
+    formCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: 20
+    },
+    formTitle: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 12
+    },
+    label: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.mutedText,
+      marginBottom: 4,
+      letterSpacing: 0.5
+    },
+    input: {
+      backgroundColor: colors.surfaceElevated,
+      borderWidth: 1,
+      borderColor: colors.border,
+      color: colors.text,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 14,
+      marginBottom: 12
+    },
+    formButtonRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 6
+    },
+    saveButton: {
+      flex: 1,
+      backgroundColor: colors.success,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center'
+    },
+    saveButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '700'
+    },
+    cancelButton: {
+      flex: 1,
+      backgroundColor: colors.surfaceElevated,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    cancelButtonText: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      fontWeight: '600'
+    },
+    list: {
+      gap: 12
+    },
+    contactCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    },
+    name: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 2
+    },
+    relation: {
+      fontSize: 12,
+      color: colors.mutedText
+    },
+    badgeCol: {
+      alignItems: 'flex-end',
+      gap: 6
+    },
+    priority: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.primary,
+      backgroundColor: colors.surfaceElevated,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    deleteText: {
+      color: colors.danger,
+      fontSize: 11,
+      textDecorationLine: 'underline'
+    }
+  });

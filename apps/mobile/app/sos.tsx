@@ -1,12 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useSafetyStore } from '../src/store/safetyStore';
+import { useTheme } from '../src/theme/ThemeContext';
+import { ColorTokens } from '../src/theme/tokens';
+import { formatNumber, SupportedLanguage } from '../src/i18n';
 
 export default function SOSScreen() {
   const router = useRouter();
   const { immediate, skipCountdown } = useLocalSearchParams<{ immediate?: string; skipCountdown?: string }>();
   const shouldSkipCountdown = immediate === 'true' || skipCountdown === 'true';
+
+  const { colors } = useTheme();
+  const { t, i18n } = useTranslation();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const currentLang = ((i18n.language || 'en').split('-')[0]) as SupportedLanguage;
 
   const { activeIncident, triggerSOS, cancelSOS, lastKnownLocation, isDemoMode } = useSafetyStore();
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -37,8 +46,8 @@ export default function SOSScreen() {
           'EMERGENCY INITIATED',
           `Incident #${incident.id.slice(0, 8)} saved in local SQLite. Last-known GPS coords attached: ${incident.latitude?.toFixed(4)}, ${incident.longitude?.toFixed(4)}. Dispatches ready offline.`,
           [
-            { text: 'Proceed to Triage', onPress: () => router.push('/triage') },
-            { text: 'View Incident', onPress: () => router.push(`/incidents/${incident.id}`) }
+            { text: t('sos.openTriage'), onPress: () => router.push('/triage') },
+            { text: t('sos.report'), onPress: () => router.push(`/incidents/${incident.id}`) }
           ]
         );
       });
@@ -47,7 +56,7 @@ export default function SOSScreen() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [countdown, triggerSOS, router]);
+  }, [countdown, triggerSOS, router, t]);
 
   const handlePressIn = () => {
     if (countdown !== null || activeIncident) return;
@@ -86,7 +95,7 @@ export default function SOSScreen() {
   const handleCancelActiveIncident = async () => {
     if (activeIncident) {
       await cancelSOS(activeIncident.id);
-      Alert.alert('Alert Cancelled', 'The emergency status has been marked cancelled.');
+      Alert.alert(t('common.cancel'), 'The emergency status has been marked cancelled.');
     }
   };
 
@@ -94,33 +103,37 @@ export default function SOSScreen() {
     <View style={styles.container}>
       {isDemoMode && (
         <View style={styles.demoWarningBanner}>
-          <Text style={styles.demoWarningText}>⚠️ Demo Mode is ON: no real alerts will be sent.</Text>
+          <Text style={styles.demoWarningText}>{t('sos.demoWarning')}</Text>
         </View>
       )}
 
-      <Text style={styles.title}>EMERGENCY SOS</Text>
-      <Text style={styles.description}>
-        Generates an idempotent client-generated incident in local SQLite.
-        Escalation occurs immediately offline and attaches last-known GPS coordinates without waiting on cloud or AI.
-      </Text>
+      <Text style={styles.title}>{t('sos.title')}</Text>
+      <Text style={styles.description}>{t('sos.desc')}</Text>
 
       {/* Countdown Active State */}
       {countdown !== null ? (
         <View style={styles.countdownContainer}>
-          <Text style={styles.countdownLabel}>EMERGENCY ALERT TRIGGERING IN</Text>
-          <Text style={styles.countdownNumber}>{countdown}</Text>
-          <TouchableOpacity style={styles.abortButton} onPress={handleAbortCountdown}>
-            <Text style={styles.abortButtonText}>✕ Cancel Alert</Text>
+          <Text style={styles.countdownLabel}>{t('sos.alertTriggeringIn')}</Text>
+          <Text style={styles.countdownNumber}>
+            {formatNumber(countdown, currentLang)}
+          </Text>
+          <TouchableOpacity
+            style={styles.abortButton}
+            onPress={handleAbortCountdown}
+            accessibilityRole="button"
+            accessibilityLabel={t('sos.cancelAlert')}
+          >
+            <Text style={styles.abortButtonText}>{t('sos.cancelAlert')}</Text>
           </TouchableOpacity>
         </View>
       ) : activeIncident ? (
         /* Active Emergency Incident State */
         <View style={styles.activeIncidentBox}>
           <Text style={styles.activeEmoji}>🚨</Text>
-          <Text style={styles.activeHeading}>EMERGENCY ACTIVE</Text>
+          <Text style={styles.activeHeading}>{t('sos.emergencyActive')}</Text>
           <Text style={styles.incidentId}>ID: {activeIncident.id}</Text>
           <Text style={styles.incidentDetails}>
-            Priority: {activeIncident.priority.toUpperCase()} · Status: {activeIncident.status.toUpperCase()}
+            {t('sos.priority')}: {activeIncident.priority.toUpperCase()} · {t('sos.status')}: {activeIncident.status.toUpperCase()}
           </Text>
           <Text style={styles.gpsCoords}>
             GPS: {activeIncident.latitude?.toFixed(4)}° N, {activeIncident.longitude?.toFixed(4)}° E
@@ -130,23 +143,26 @@ export default function SOSScreen() {
             <TouchableOpacity
               style={styles.triageButton}
               onPress={() => router.push('/triage')}
+              accessibilityRole="button"
             >
-              <Text style={styles.triageButtonText}>🎙️ Open Triage</Text>
+              <Text style={styles.triageButtonText}>{t('sos.openTriage')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.detailsButton}
               onPress={() => router.push(`/incidents/${activeIncident.id}`)}
+              accessibilityRole="button"
             >
-              <Text style={styles.detailsButtonText}>Report</Text>
+              <Text style={styles.detailsButtonText}>{t('sos.report')}</Text>
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
             style={styles.cancelIncidentButton}
             onPress={handleCancelActiveIncident}
+            accessibilityRole="button"
           >
-            <Text style={styles.cancelIncidentText}>Cancel / Resolve Emergency</Text>
+            <Text style={styles.cancelIncidentText}>{t('sos.cancelEmergency')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -157,10 +173,14 @@ export default function SOSScreen() {
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={t('sos.holdForSos')}
           >
-            <Text style={styles.sosText}>HOLD FOR SOS</Text>
+            <Text style={styles.sosText}>{t('sos.holdForSos')}</Text>
             <Text style={styles.sosSubtext}>
-              {holdProgress > 0 ? `Holding... ${holdProgress}%` : 'Hold 2s to Activate'}
+              {holdProgress > 0
+                ? t('sos.holding', { percent: holdProgress })
+                : t('sos.holdToActivate')}
             </Text>
           </TouchableOpacity>
 
@@ -176,245 +196,246 @@ export default function SOSScreen() {
       {lastKnownLocation && (
         <View style={styles.locationTag}>
           <Text style={styles.locationTagText}>
-            📍 Last-Known GPS: {lastKnownLocation.latitude.toFixed(4)}° N, {lastKnownLocation.longitude.toFixed(4)}° E
+            📍 {t('sos.lastKnownGps')}: {lastKnownLocation.latitude.toFixed(4)}° N, {lastKnownLocation.longitude.toFixed(4)}° E
           </Text>
         </View>
       )}
 
       <View style={styles.noticeBox}>
-        <Text style={styles.noticeText}>
-          DEMO MODE: Automated external SMS and voice calls remain OFF by default to avoid dispatching real rescue teams during demonstrations.
-        </Text>
+        <Text style={styles.noticeText}>{t('sos.demoNotice')}</Text>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#020617',
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#EF4444',
-    marginBottom: 8,
-    letterSpacing: 1
-  },
-  description: {
-    fontSize: 13,
-    color: '#94A3B8',
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 18,
-    maxWidth: 340
-  },
-  demoWarningBanner: {
-    backgroundColor: '#78350F',
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 16,
-    width: '100%',
-    alignItems: 'center'
-  },
-  demoWarningText: {
-    color: '#FEF3C7',
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center'
-  },
-  buttonWrapper: {
-    alignItems: 'center',
-    width: '100%'
-  },
-  sosButton: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: '#DC2626',
-    borderWidth: 8,
-    borderColor: '#7F1D1D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 12
-  },
-  sosButtonHolding: {
-    backgroundColor: '#B91C1C',
-    borderColor: '#F87171'
-  },
-  sosText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 1
-  },
-  sosSubtext: {
-    color: '#FECACA',
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '600'
-  },
-  progressBarBackground: {
-    width: 220,
-    height: 8,
-    backgroundColor: '#1E293B',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginTop: 14
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#EF4444',
-    borderRadius: 4
-  },
-  countdownContainer: {
-    alignItems: 'center',
-    backgroundColor: '#450A0A',
-    borderWidth: 2,
-    borderColor: '#EF4444',
-    borderRadius: 20,
-    padding: 32,
-    width: '100%',
-    maxWidth: 320
-  },
-  countdownLabel: {
-    color: '#FCA5A5',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: 12
-  },
-  countdownNumber: {
-    fontSize: 72,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    fontFamily: 'monospace',
-    marginBottom: 20
-  },
-  abortButton: {
-    backgroundColor: '#7F1D1D',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#F87171'
-  },
-  abortButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700'
-  },
-  activeIncidentBox: {
-    alignItems: 'center',
-    backgroundColor: '#1E1B4B',
-    borderWidth: 1.5,
-    borderColor: '#6366F1',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 340
-  },
-  activeEmoji: {
-    fontSize: 36,
-    marginBottom: 6
-  },
-  activeHeading: {
-    color: '#F87171',
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 1
-  },
-  incidentId: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    marginTop: 4,
-    marginBottom: 4
-  },
-  incidentDetails: {
-    color: '#E2E8F0',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 2
-  },
-  gpsCoords: {
-    color: '#F59E0B',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    marginBottom: 16
-  },
-  actionButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    width: '100%',
-    marginBottom: 14
-  },
-  triageButton: {
-    flex: 2,
-    backgroundColor: '#EA580C',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  triageButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13
-  },
-  detailsButton: {
-    flex: 1,
-    backgroundColor: '#334155',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  detailsButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13
-  },
-  cancelIncidentButton: {
-    paddingVertical: 8
-  },
-  cancelIncidentText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    textDecorationLine: 'underline'
-  },
-  locationTag: {
-    marginTop: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#334155'
-  },
-  locationTagText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontFamily: 'monospace'
-  },
-  noticeBox: {
-    marginTop: 20,
-    padding: 12,
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-    maxWidth: 340
-  },
-  noticeText: {
-    color: '#F59E0B',
-    fontSize: 11,
-    lineHeight: 16,
-    textAlign: 'center'
-  }
-});
+const createStyles = (colors: ColorTokens) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      padding: 24,
+      alignItems: 'center',
+      justifyContent: 'center'
+    },
+    title: {
+      fontSize: 26,
+      fontWeight: '900',
+      color: colors.danger,
+      marginBottom: 8,
+      letterSpacing: 1
+    },
+    description: {
+      fontSize: 13,
+      color: colors.mutedText,
+      textAlign: 'center',
+      marginBottom: 32,
+      lineHeight: 18,
+      maxWidth: 340
+    },
+    demoWarningBanner: {
+      backgroundColor: colors.warning,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      marginBottom: 16,
+      width: '100%',
+      alignItems: 'center'
+    },
+    demoWarningText: {
+      color: '#000000',
+      fontSize: 12,
+      fontWeight: '800',
+      textAlign: 'center'
+    },
+    buttonWrapper: {
+      alignItems: 'center',
+      width: '100%'
+    },
+    sosButton: {
+      width: 220,
+      height: 220,
+      borderRadius: 110,
+      backgroundColor: colors.sosButtonBg,
+      borderWidth: 8,
+      borderColor: colors.borderStrong,
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 12
+    },
+    sosButtonHolding: {
+      backgroundColor: '#991B1B',
+      borderColor: '#F87171'
+    },
+    sosText: {
+      color: colors.sosButtonText,
+      fontSize: 20,
+      fontWeight: '900',
+      letterSpacing: 1
+    },
+    sosSubtext: {
+      color: '#FECACA',
+      fontSize: 12,
+      marginTop: 4,
+      fontWeight: '600'
+    },
+    progressBarBackground: {
+      width: 220,
+      height: 8,
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 4,
+      overflow: 'hidden',
+      marginTop: 14
+    },
+    progressBarFill: {
+      height: '100%',
+      backgroundColor: colors.danger,
+      borderRadius: 4
+    },
+    countdownContainer: {
+      alignItems: 'center',
+      backgroundColor: colors.fallCountdownBg,
+      borderWidth: 2,
+      borderColor: colors.danger,
+      borderRadius: 20,
+      padding: 32,
+      width: '100%',
+      maxWidth: 320
+    },
+    countdownLabel: {
+      color: '#FECACA',
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      marginBottom: 12
+    },
+    countdownNumber: {
+      fontSize: 72,
+      fontWeight: '900',
+      color: colors.fallCountdownText,
+      fontFamily: 'monospace',
+      marginBottom: 20
+    },
+    abortButton: {
+      backgroundColor: colors.danger,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.borderStrong
+    },
+    abortButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700'
+    },
+    activeIncidentBox: {
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
+      borderRadius: 16,
+      padding: 24,
+      width: '100%',
+      maxWidth: 340
+    },
+    activeEmoji: {
+      fontSize: 36,
+      marginBottom: 6
+    },
+    activeHeading: {
+      color: colors.danger,
+      fontSize: 18,
+      fontWeight: '900',
+      letterSpacing: 1
+    },
+    incidentId: {
+      color: colors.mutedText,
+      fontSize: 11,
+      fontFamily: 'monospace',
+      marginTop: 4,
+      marginBottom: 4
+    },
+    incidentDetails: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: '600',
+      marginBottom: 2
+    },
+    gpsCoords: {
+      color: colors.warning,
+      fontSize: 11,
+      fontFamily: 'monospace',
+      marginBottom: 16
+    },
+    actionButtonsRow: {
+      flexDirection: 'row',
+      gap: 10,
+      width: '100%',
+      marginBottom: 14
+    },
+    triageButton: {
+      flex: 2,
+      backgroundColor: colors.primary,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center'
+    },
+    triageButtonText: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+      fontSize: 13
+    },
+    detailsButton: {
+      flex: 1,
+      backgroundColor: colors.surfaceElevated,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    detailsButtonText: {
+      color: colors.text,
+      fontWeight: '700',
+      fontSize: 13
+    },
+    cancelIncidentButton: {
+      paddingVertical: 8
+    },
+    cancelIncidentText: {
+      color: colors.mutedText,
+      fontSize: 12,
+      textDecorationLine: 'underline'
+    },
+    locationTag: {
+      marginTop: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border
+    },
+    locationTagText: {
+      color: colors.mutedText,
+      fontSize: 11,
+      fontFamily: 'monospace'
+    },
+    noticeBox: {
+      marginTop: 20,
+      padding: 12,
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      maxWidth: 340
+    },
+    noticeText: {
+      color: colors.warning,
+      fontSize: 11,
+      lineHeight: 16,
+      textAlign: 'center'
+    }
+  });
