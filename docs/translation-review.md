@@ -44,3 +44,17 @@ This document catalogs emergency, medical, triage, and sensor terminology across
 ## 3. General Architecture Recommendation
 - All internal database states, machine-to-machine APIs, and triage rule inputs strictly use standardized TypeScript / PostgreSQL enums (`IncidentPriority.CRITICAL`, `'Unresponsive'`, `'Severe bleeding'`).
 - The localized strings above are exclusively presented in UI views and synthesized by text-to-speech engines.
+
+
+---
+
+## 4. Web Command Center & SAR Dashboard Review Items
+
+| Domain / Key | English Source | Hindi (`hi`) Translation | Kannada (`kn`) Translation | Review Notes // REVIEW |
+| :--- | :--- | :--- | :--- | :--- |
+| `enums.source_geofence` | Geofence Breach | जियोफेंस उल्लंघन | ಜಿಯೋಫೆನ್ಸ್ ಉಲ್ಲಂಘನೆ | // REVIEW: Verify spatial containment terminology for mountain search sectors. |
+| `enums.source_timeout` | Check-in Timeout | चेक-इन टाइमआउट | ಚೆಕ್-ಇನ್ ಸಮಯ ಮೀರಿದೆ | // REVIEW: Scheduled overdue check-in escalation wording. |
+| `incident_detail.dossier_title` | Emergency Incident Dossier | आपातकालीन घटना डॉसियर | ತುರ್ತು ಘಟನೆ ವಿವರಣೆ (Dossier) | // REVIEW: Official search-and-rescue incident file terminology. |
+| `agents.agent3_name` | Extraction Route Planner | निष्कासन मार्ग योजनाकार | ರಕ್ಷಣಾ ನಿರ್ಗಮನ ಮಾರ್ಗ ಯೋಜಕ | // REVIEW: Mountain evacuation pathfinding terminology. |
+| `agents.agent4_name` | SAR Dispatch Coordinator | खोज और बचाव समन्वय एजेंट | ಹುಡುಕಾಟ ಮತ್ತು ರಕ್ಷಣಾ ಸಂಯೋಜಕ (SAR) | // REVIEW: ITBP / NDRF mountain SAR dispatch terminology. |
+| `analytics.card_avg_response` | Avg Multi-Agent Triage Time | औसत मल्टी-एजेंट ट्रायज समय | ಸರಾಸರಿ ಮಲ್ಟಿ-ಏಜೆಂಟ್ ಟ್ರಯೇಜ್ ಸಮಯ | // REVIEW: Multi-agent coordination latency benchmark. |

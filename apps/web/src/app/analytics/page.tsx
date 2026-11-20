@@ -18,9 +18,11 @@ import {
   Line,
   Legend
 } from 'recharts';
-import { BarChart3, TrendingUp, RefreshCw, AlertCircle, HeartPulse, ShieldAlert, Clock, Activity } from 'lucide-react';
+import { BarChart3, TrendingUp, RefreshCw, AlertCircle, HeartPulse, ShieldAlert, Clock } from 'lucide-react';
+import { useI18n } from '../../components/I18nProvider';
 
 export default function AnalyticsPage() {
+  const { t, formatNumber } = useI18n();
   const [incidents, setIncidents] = useState<IncidentWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,22 +47,22 @@ export default function AnalyticsPage() {
   // 1. Compute Priority Breakdown from real incident data
   const priorityData = [
     {
-      name: 'Critical',
+      name: t('enums.priority_critical'),
       count: incidents.filter((i) => i.priority === IncidentPriority.CRITICAL).length,
       fill: '#ef4444'
     },
     {
-      name: 'High',
+      name: t('enums.priority_high'),
       count: incidents.filter((i) => i.priority === IncidentPriority.HIGH).length,
       fill: '#f97316'
     },
     {
-      name: 'Medium',
+      name: t('enums.priority_medium'),
       count: incidents.filter((i) => i.priority === IncidentPriority.MEDIUM).length,
       fill: '#eab308'
     },
     {
-      name: 'Low',
+      name: t('enums.priority_low'),
       count: incidents.filter((i) => i.priority === IncidentPriority.LOW).length,
       fill: '#3b82f6'
     }
@@ -96,11 +98,11 @@ export default function AnalyticsPage() {
   });
 
   const sourceData = [
-    { name: 'Fall Detector', value: sourceCounts['Fall Detector'], color: '#f97316' },
-    { name: 'Manual SOS', value: sourceCounts['Manual SOS'], color: '#ef4444' },
-    { name: 'PPG Vital Anomaly', value: sourceCounts['PPG Vital Anomaly'], color: '#ec4899' },
-    { name: 'Audio Distress', value: sourceCounts['Audio Distress'], color: '#8b5cf6' },
-    { name: 'System / Other', value: sourceCounts['System / Other'], color: '#64748b' }
+    { name: t('enums.source_fall'), value: sourceCounts['Fall Detector'], color: '#f97316' },
+    { name: t('enums.source_manual'), value: sourceCounts['Manual SOS'], color: '#ef4444' },
+    { name: t('enums.source_wearable'), value: sourceCounts['PPG Vital Anomaly'], color: '#ec4899' },
+    { name: t('enums.source_geofence'), value: sourceCounts['Audio Distress'], color: '#8b5cf6' },
+    { name: t('enums.source_timeout'), value: sourceCounts['System / Other'], color: '#64748b' }
   ].filter((s) => s.value > 0);
 
   // 3. Compute Hourly Incident Distribution from real incident data
@@ -136,15 +138,15 @@ export default function AnalyticsPage() {
   if (loading) {
     return (
       <div className="flex flex-col gap-6 py-6 animate-pulse">
-        <div className="h-10 w-64 bg-slate-800 rounded-lg" />
+        <div className="h-10 w-64 bg-slate-200 dark:bg-slate-800 rounded-lg" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 bg-slate-800/60 rounded-2xl" />
+            <div key={i} className="h-28 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
           ))}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="h-72 bg-slate-800/40 rounded-2xl" />
-          <div className="h-72 bg-slate-800/40 rounded-2xl" />
+          <div className="h-72 bg-slate-100 dark:bg-slate-800/40 rounded-2xl" />
+          <div className="h-72 bg-slate-100 dark:bg-slate-800/40 rounded-2xl" />
         </div>
       </div>
     );
@@ -152,10 +154,10 @@ export default function AnalyticsPage() {
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-red-900/50 bg-red-950/20 p-8 flex flex-col items-center justify-center gap-3 text-center my-8">
-        <AlertCircle className="w-8 h-8 text-red-400" />
-        <h3 className="text-base font-bold text-white">Analytics Unavailable</h3>
-        <p className="text-xs text-red-300/80 max-w-sm">{error}</p>
+      <div className="rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/20 p-8 flex flex-col items-center justify-center gap-3 text-center my-8">
+        <AlertCircle className="w-8 h-8 text-red-500 dark:text-red-400" />
+        <h3 className="text-base font-bold text-slate-900 dark:text-white">Analytics Unavailable</h3>
+        <p className="text-xs text-red-600 dark:text-red-300/80 max-w-sm">{error}</p>
         <button
           onClick={fetchAnalyticsData}
           className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-bold text-white transition shadow-sm"
@@ -169,20 +171,20 @@ export default function AnalyticsPage() {
   return (
     <div className="flex flex-col gap-8 py-4 sm:py-6">
       {/* Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <BarChart3 className="w-7 h-7 text-orange-500" />
-            Safety Analytics & SAR Telemetry
+            {t('analytics.title')}
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Aggregated metrics computed dynamically from active incident logs and on-trail telemetry.
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+            {t('analytics.subtitle')}
           </p>
         </div>
 
         <button
           onClick={fetchAnalyticsData}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition"
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 transition"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Recompute
         </button>
@@ -190,51 +192,51 @@ export default function AnalyticsPage() {
 
       {/* Primary KPI Cards (Computed from data + clearly labeled illustrative demo stats) */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Computed from data */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase">Total Incidents</span>
-            <ShieldAlert className="w-4 h-4 text-orange-400" />
+        {/* KPI 1 */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-semibold uppercase">{t('analytics.card_total_incidents')}</span>
+            <ShieldAlert className="w-4 h-4 text-orange-500" />
           </div>
-          <div className="mt-2 text-3xl font-black text-white">{incidents.length}</div>
-          <span className="mt-2 text-[11px] text-slate-400">Computed from incident records</span>
+          <div className="mt-2 text-3xl font-black text-slate-900 dark:text-white">{formatNumber(incidents.length)}</div>
+          <span className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Computed live</span>
         </div>
 
-        {/* KPI 2: Computed from data */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase">Critical Share</span>
-            <TrendingUp className="w-4 h-4 text-red-400" />
+        {/* KPI 2 */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-semibold uppercase">{t('analytics.card_critical_pct')}</span>
+            <TrendingUp className="w-4 h-4 text-red-500" />
           </div>
-          <div className="mt-2 text-3xl font-black text-red-400">
+          <div className="mt-2 text-3xl font-black text-red-600 dark:text-red-400">
             {incidents.length > 0
               ? `${Math.round((incidents.filter((i) => i.priority === IncidentPriority.CRITICAL).length / incidents.length) * 100)}%`
               : '0%'}
           </div>
-          <span className="mt-2 text-[11px] text-slate-400">Proportion of critical events</span>
+          <span className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Proportion of critical events</span>
         </div>
 
-        {/* KPI 3: Computed from data */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase">Avg Pulse in Distress</span>
-            <HeartPulse className="w-4 h-4 text-red-400" />
+        {/* KPI 3 */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-semibold uppercase">{t('analytics.card_avg_pulse')}</span>
+            <HeartPulse className="w-4 h-4 text-red-500" />
           </div>
-          <div className="mt-2 text-3xl font-black text-white">
-            {avgPulse > 0 ? `${avgPulse} BPM` : 'N/A'}
+          <div className="mt-2 text-3xl font-black text-slate-900 dark:text-white">
+            {avgPulse > 0 ? `${formatNumber(avgPulse)} BPM` : 'N/A'}
           </div>
-          <span className="mt-2 text-[11px] text-slate-400">Non-diagnostic camera estimate</span>
+          <span className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Non-diagnostic camera estimate</span>
         </div>
 
-        {/* KPI 4: Illustrative metric (labeled clearly per requirements) */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase">Mean Coordination Time</span>
-            <Clock className="w-4 h-4 text-cyan-400" />
+        {/* KPI 4: Illustrative metric */}
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 flex flex-col justify-between shadow-sm">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-semibold uppercase">{t('analytics.card_avg_response')}</span>
+            <Clock className="w-4 h-4 text-cyan-500" />
           </div>
-          <div className="mt-2 text-3xl font-black text-cyan-400">~45s</div>
-          <span className="mt-2 text-[10px] font-bold text-amber-400 uppercase">
-            [DEMO] illustrative
+          <div className="mt-2 text-3xl font-black text-cyan-600 dark:text-cyan-400">~45s</div>
+          <span className="mt-2 text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase">
+            [DEMO] {t('analytics.illustrative_note')}
           </span>
         </div>
       </section>
@@ -242,19 +244,24 @@ export default function AnalyticsPage() {
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Chart 1: Computed Incidents by Priority */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-white text-base">Incidents by Priority</h3>
-            <span className="text-[10px] font-mono text-slate-400">Computed live</span>
+            <h3 className="font-bold text-slate-900 dark:text-white text-base">{t('analytics.chart_priority_breakdown')}</h3>
+            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">Live</span>
           </div>
           <div className="w-full h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={priorityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                <XAxis dataKey="name" stroke="var(--chart-text)" fontSize={12} />
+                <YAxis stroke="var(--chart-text)" fontSize={12} allowDecimals={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                  contentStyle={{
+                    backgroundColor: 'var(--chart-tooltip-bg)',
+                    borderColor: 'var(--chart-tooltip-border)',
+                    borderRadius: '8px',
+                    color: 'var(--chart-tooltip-text)'
+                  }}
                 />
                 <Bar dataKey="count" radius={[6, 6, 0, 0]} />
               </BarChart>
@@ -263,14 +270,14 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Chart 2: Computed Detection Source Breakdown */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-white text-base">Detection Source Breakdown</h3>
-            <span className="text-[10px] font-mono text-slate-400">Computed live</span>
+            <h3 className="font-bold text-slate-900 dark:text-white text-base">{t('analytics.chart_source_breakdown')}</h3>
+            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">Live</span>
           </div>
           <div className="w-full h-64 flex items-center justify-center">
             {sourceData.length === 0 ? (
-              <span className="text-xs text-slate-400">No incident sources to display</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">No incident sources to display</span>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -288,12 +295,17 @@ export default function AnalyticsPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                    contentStyle={{
+                      backgroundColor: 'var(--chart-tooltip-bg)',
+                      borderColor: 'var(--chart-tooltip-border)',
+                      borderRadius: '8px',
+                      color: 'var(--chart-tooltip-text)'
+                    }}
                   />
                   <Legend
                     verticalAlign="bottom"
                     height={36}
-                    formatter={(value) => <span style={{ color: '#cbd5e1', fontSize: '11px' }}>{value}</span>}
+                    formatter={(value) => <span className="text-slate-700 dark:text-slate-300 text-[11px]">{value}</span>}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -302,26 +314,31 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Chart 3: Hourly Distribution */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4 lg:col-span-2">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 sm:p-6 flex flex-col gap-4 lg:col-span-2 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-white text-base">Diurnal Incident Distribution by Hour</h3>
-            <span className="text-[10px] font-mono text-slate-400">Computed from timestamps</span>
+            <h3 className="font-bold text-slate-900 dark:text-white text-base">{t('analytics.chart_hourly_volume')}</h3>
+            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">Hourly</span>
           </div>
           <div className="w-full h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={hourlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="time" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                <XAxis dataKey="time" stroke="var(--chart-text)" fontSize={12} />
+                <YAxis stroke="var(--chart-text)" fontSize={12} allowDecimals={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                  contentStyle={{
+                    backgroundColor: 'var(--chart-tooltip-bg)',
+                    borderColor: 'var(--chart-tooltip-border)',
+                    borderRadius: '8px',
+                    color: 'var(--chart-tooltip-text)'
+                  }}
                 />
                 <Line
                   type="monotone"
                   dataKey="count"
-                  stroke="#ea580c"
+                  stroke="var(--chart-line1)"
                   strokeWidth={3}
-                  dot={{ r: 4, fill: '#ea580c' }}
+                  dot={{ r: 4, fill: 'var(--chart-line1)' }}
                   activeDot={{ r: 6 }}
                 />
               </LineChart>

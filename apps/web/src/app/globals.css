@@ -3,18 +3,46 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 240, 246, 252;
-  --background-start-rgb: 15, 23, 42;
-  --background-end-rgb: 2, 6, 23;
+  --bg-page: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  /* Recharts tokens */
+  --chart-line1: #ea580c;
+  --chart-line2: #0284c7;
+  --chart-line3: #16a34a;
+  --chart-grid: #e2e8f0;
+  --chart-text: #64748b;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: #cbd5e1;
+}
+
+.dark {
+  --bg-page: #020617;
+  --bg-surface: #0f172a;
+  --bg-surface-elevated: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #1e293b;
+  --border-strong: #334155;
+
+  /* Recharts tokens */
+  --chart-line1: #f97316;
+  --chart-line2: #38bdf8;
+  --chart-line3: #22c55e;
+  --chart-grid: #1e293b;
+  --chart-text: #94a3b8;
+  --chart-tooltip-bg: #0f172a;
+  --chart-tooltip-border: #334155;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  font-family: var(--font-sans), var(--font-devanagari), var(--font-kannada), system-ui, -apple-system, sans-serif;
   min-height: 100vh;
 }
