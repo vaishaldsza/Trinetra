@@ -9,7 +9,7 @@ import {
   NotificationStatus,
   TriageAssessment,
   VitalReading
-} from '@trinetra/shared';
+} from './contracts';
 
 export interface HospitalResult {
   id: string;

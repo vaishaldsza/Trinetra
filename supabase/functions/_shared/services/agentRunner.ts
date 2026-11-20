@@ -2,7 +2,7 @@ import {
   AgentName,
   AgentTask,
   AgentTaskStatus
-} from '@trinetra/shared';
+} from '../contracts';
 import { DatabaseClient, HospitalResult, OverpassClient, AgentverseClient } from '../types';
 
 export interface AgentExecutionOutput {

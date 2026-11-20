@@ -61,18 +61,34 @@ BEGIN
 END;
 $$;
 
--- 4. Optional pg_cron job (runs every minute if pg_cron is enabled)
+-- 4. Invoke retry-notifications Edge Function via pg_net and pg_cron
+-- Dispatches transient retry_scheduled rows using exponential backoff with real outbound calls
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') AND EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
     PERFORM cron.schedule(
-      'notification-retry-sweep',
+      'dispatch-retry-notifications',
+      '* * * * *',
+      $cron$
+      SELECT net.http_post(
+        url := COALESCE(current_setting('app.settings.supabase_url', true), 'http://127.0.0.1:54321') || '/functions/v1/retry-notifications',
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'Authorization', 'Bearer ' || COALESCE(current_setting('app.settings.service_role_key', true), '')
+        ),
+        body := '{}'::jsonb
+      );
+      $cron$
+    );
+  ELSIF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    PERFORM cron.schedule(
+      'notification-retry-sweep-sql',
       '* * * * *',
       'SELECT public.retry_scheduled_notifications(3);'
     );
   END IF;
 EXCEPTION
   WHEN OTHERS THEN
-    -- Silently continue if pg_cron is not configured in local environment
+    -- Silently continue if pg_cron or pg_net are not configured in local environment
     NULL;
 END $$;

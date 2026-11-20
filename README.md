@@ -67,6 +67,41 @@ pnpm run dev:mobile
 # Expo CLI launches Metro bundler. Press 'w' for web preview, 'a' for Android, or 'i' for iOS simulator.
 ```
 
+### 7. Supabase Edge Functions Deployment
+
+#### Before deploying: install Deno and run deno check on every function entry point
+To ensure zero runtime import errors or syntax discrepancies before deploying Edge Functions:
+1. Install Deno (e.g. `winget install DenoLand.Deno` or `irm https://deno.land/install.ps1 | iex` on Windows).
+2. Run `deno check` on every function entry point:
+```powershell
+deno check supabase/functions/process-incident/index.ts
+deno check supabase/functions/send-notification/index.ts
+deno check supabase/functions/run-agent-task/index.ts
+deno check supabase/functions/twilio-webhook/index.ts
+deno check supabase/functions/retry-notifications/index.ts
+```
+
+#### Production Deployment Commands
+```powershell
+# 1. Set environment secrets in production
+supabase secrets set `
+  TWILIO_ACCOUNT_SID="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" `
+  TWILIO_AUTH_TOKEN="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" `
+  TWILIO_PHONE_NUMBER="+1xxxxxxxxxx" `
+  TWILIO_WEBHOOK_URL="https://your-project.supabase.co/functions/v1/twilio-webhook" `
+  ELEVENLABS_API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" `
+  AGENTVERSE_API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# 2. Deploy Twilio Webhook WITHOUT gateway JWT (Twilio signs callbacks via HMAC X-Twilio-Signature)
+supabase functions deploy twilio-webhook --no-verify-jwt
+
+# 3. Deploy all internal services WITH gateway JWT verification
+supabase functions deploy send-notification
+supabase functions deploy process-incident
+supabase functions deploy run-agent-task
+supabase functions deploy retry-notifications
+```
+
 ---
 
 ## Safety & Non-Diagnostic Notice

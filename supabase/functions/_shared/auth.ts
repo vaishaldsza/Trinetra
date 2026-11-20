@@ -1,5 +1,5 @@
 import { DatabaseClient } from './types';
-import { Incident, AgentTask } from '@trinetra/shared';
+import { Incident, AgentTask } from './contracts';
 
 export interface SupabaseAuthClient {
   auth: {
@@ -142,19 +142,20 @@ export async function computeTwilioSignature(
 }
 
 /**
- * Validates the X-Twilio-Signature against the request URL, form params, and auth token.
+ * Validates the X-Twilio-Signature against the configured TWILIO_WEBHOOK_URL, form params, and auth token.
+ * Security requirement: URL is strictly built from the TWILIO_WEBHOOK_URL secret, never from incoming req.url.
  */
 export async function validateTwilioSignature(
   authToken: string | undefined,
   twilioSignature: string | null | undefined,
-  url: string,
+  webhookUrl: string | undefined,
   params: Record<string, string>
 ): Promise<boolean> {
-  if (!authToken || !twilioSignature) {
+  if (!authToken || !twilioSignature || !webhookUrl) {
     return false;
   }
   try {
-    const expected = await computeTwilioSignature(authToken, url, params);
+    const expected = await computeTwilioSignature(authToken, webhookUrl, params);
     return expected === twilioSignature;
   } catch {
     return false;

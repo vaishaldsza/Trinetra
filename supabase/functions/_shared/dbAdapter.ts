@@ -1,4 +1,3 @@
-import { SupabaseClient } from '@supabase/supabase-js';
 import {
   AgentTask,
   EmergencyContact,
@@ -6,13 +5,13 @@ import {
   Notification,
   TriageAssessment,
   VitalReading
-} from '@trinetra/shared';
-import { DatabaseClient } from './types.ts';
+} from './contracts';
+import { DatabaseClient } from './types';
 
 /**
  * Creates a DatabaseClient backed by a real SupabaseClient instance
  */
-export function createSupabaseDbClient(supabase: SupabaseClient): DatabaseClient {
+export function createSupabaseDbClient(supabase: any): DatabaseClient {
   return {
     async getIncident(id: string): Promise<Incident | null> {
       const { data, error } = await supabase.from('incidents').select('*').eq('id', id).maybeSingle();

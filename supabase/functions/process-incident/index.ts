@@ -1,17 +1,23 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-import { z } from 'https://esm.sh/zod@3.22.4';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1?target=deno';
+import { z } from 'https://esm.sh/zod@3.22.4?target=deno';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 import { authenticateCaller, authorizeIncidentAccess } from '../_shared/auth.ts';
 import { defaultRateLimiter } from '../_shared/rateLimit.ts';
 import { createSupabaseDbClient } from '../_shared/dbAdapter.ts';
 import { processIncidentLogic } from '../_shared/services/incidentProcessor.ts';
 
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+  serve(handler: (req: Request) => Promise<Response> | Response): void;
+};
+
 const RequestSchema = z.object({
   incident_id: z.string().uuid('Valid incident UUID is required')
 });
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
 

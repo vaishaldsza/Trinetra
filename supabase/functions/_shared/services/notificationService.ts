@@ -3,7 +3,7 @@ import {
   NotificationChannel,
   NotificationStatus,
   Incident
-} from '@trinetra/shared';
+} from '../contracts';
 import { DatabaseClient, TwilioClient, ElevenLabsClient } from '../types';
 
 export interface NotificationServiceDeps {

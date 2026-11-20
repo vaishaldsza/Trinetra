@@ -26,6 +26,8 @@ import {
   validateTwilioSignature
 } from '../../../../supabase/functions/_shared/auth';
 import { DatabaseClient, TwilioClient, ElevenLabsClient } from '../../../../supabase/functions/_shared/types';
+import * as contracts from '../../../../supabase/functions/_shared/contracts';
+import * as sharedEnums from '@trinetra/shared';
 
 function createMockDb(initial: {
   incident?: Incident;
@@ -452,32 +454,124 @@ describe('Emergency Intelligence (Backend Services)', () => {
     expect(sendResult.providerReference).toContain('DEMO-REF');
   });
 
-  it('TWILIO WEBHOOK: Validates X-Twilio-Signature and rejects invalid signatures with 403', async () => {
+  it('TWILIO WEBHOOK: Validates X-Twilio-Signature strictly against TWILIO_WEBHOOK_URL secret and rejects mismatch or forgery', async () => {
     const authToken = 'mock_auth_token_secret_12345';
-    const webhookUrl = 'https://safety.trinetra.live/functions/v1/send-notification?action=webhook';
+    const configuredWebhookUrl = 'https://safety.trinetra.live/functions/v1/twilio-webhook';
     const params = {
       MessageSid: 'SM1234567890abcdef',
       MessageStatus: 'delivered',
       To: '+919876543210'
     };
 
-    // 1. Valid signature should pass
-    const validSignature = await computeTwilioSignature(authToken, webhookUrl, params);
-    const isValid = await validateTwilioSignature(authToken, validSignature, webhookUrl, params);
+    // 1. Valid signature computed from configured secret URL passes
+    const validSignature = await computeTwilioSignature(authToken, configuredWebhookUrl, params);
+    const isValid = await validateTwilioSignature(authToken, validSignature, configuredWebhookUrl, params);
     expect(isValid).toBe(true);
 
-    // 2. Tampered signature should be rejected
-    const isInvalidSig = await validateTwilioSignature(authToken, 'invalid_forged_signature', webhookUrl, params);
+    // 2. Reject if incoming request URL or proxy URL is passed instead of TWILIO_WEBHOOK_URL
+    const internalProxyUrl = 'http://127.0.0.1:54321/functions/v1/twilio-webhook';
+    const isMismatch = await validateTwilioSignature(authToken, validSignature, internalProxyUrl, params);
+    expect(isMismatch).toBe(false);
+
+    // 3. Tampered signature should be rejected
+    const isInvalidSig = await validateTwilioSignature(authToken, 'invalid_forged_signature', configuredWebhookUrl, params);
     expect(isInvalidSig).toBe(false);
 
-    // 3. Tampered params with original signature should be rejected
-    const tamperedParams = { ...params, MessageStatus: 'failed' };
-    const isTamperedParams = await validateTwilioSignature(authToken, validSignature, webhookUrl, tamperedParams);
-    expect(isTamperedParams).toBe(false);
+    // 4. Missing secret or missing signature should be rejected safely
+    expect(await validateTwilioSignature(undefined, validSignature, configuredWebhookUrl, params)).toBe(false);
+    expect(await validateTwilioSignature(authToken, null, configuredWebhookUrl, params)).toBe(false);
+    expect(await validateTwilioSignature(authToken, validSignature, undefined, params)).toBe(false);
+  });
 
-    // 4. Missing signature or missing auth token should be rejected
-    expect(await validateTwilioSignature(undefined, validSignature, webhookUrl, params)).toBe(false);
-    expect(await validateTwilioSignature(authToken, null, webhookUrl, params)).toBe(false);
+  it('CONTRACTS PARITY: Asserts supabase/functions/_shared/contracts.ts enums match packages/shared/src/enums.ts 1:1', () => {
+
+    const enumKeys = [
+      'UserRole',
+      'HikingSessionStatus',
+      'IncidentStatus',
+      'IncidentPriority',
+      'IncidentType',
+      'DetectionSource',
+      'NotificationChannel',
+      'NotificationStatus',
+      'AgentTaskStatus',
+      'AgentName'
+    ] as const;
+
+    for (const key of enumKeys) {
+      expect(contracts, `contracts.ts is missing enum ${key}`).toHaveProperty(key);
+      const contractEnum = (contracts as Record<string, any>)[key];
+      const sharedEnum = (sharedEnums as Record<string, any>)[key];
+
+      expect(contractEnum, `Enum ${key} does not exist in shared enums`).toBeDefined();
+      expect(Object.entries(contractEnum)).toEqual(Object.entries(sharedEnum));
+    }
+  });
+
+  it('RETRY NOTIFICATIONS: Dispatches retry_scheduled rows with backoff, rejects unauthorized callers, and skips demo rows', async () => {
+    const liveIncident: Incident = {
+      id: 'inc-retry-dispatch-test',
+      user_id: 'user-retry-1',
+      incident_type: IncidentType.MANUAL_SOS,
+      priority: IncidentPriority.HIGH,
+      status: IncidentStatus.EMERGENCY_INITIATED,
+      detection_source: DetectionSource.MANUAL,
+      is_demo: false,
+      created_at: new Date().toISOString()
+    };
+
+    const eligibleNotif: Notification = {
+      id: 'notif-retry-eligible-1',
+      incident_id: liveIncident.id,
+      channel: NotificationChannel.SMS,
+      recipient: '+919876543210',
+      status: NotificationStatus.RETRY_SCHEDULED,
+      error_message: 'Temporary provider timeout',
+      is_demo: false,
+      retry_count: 1,
+      created_at: new Date().toISOString()
+    };
+
+    const demoNotif: Notification = {
+      id: 'notif-retry-demo-skip',
+      incident_id: liveIncident.id,
+      channel: NotificationChannel.SMS,
+      recipient: '+919876543211',
+      status: NotificationStatus.RETRY_SCHEDULED,
+      error_message: 'Demo test',
+      is_demo: true, // MUST NEVER BE RETRIED
+      retry_count: 0,
+      created_at: new Date().toISOString()
+    };
+
+    const db = createMockDb({ incident: liveIncident });
+    await db.createNotification(eligibleNotif);
+    await db.createNotification(demoNotif);
+
+    const twilioSendSms = vi.fn().mockResolvedValue({ success: true, sid: 'SM_RETRY_DISPATCHED' });
+    const mockTwilio: TwilioClient = {
+      isConfigured: () => true,
+      sendSms: twilioSendSms,
+      makeVoiceCall: vi.fn()
+    };
+
+    const sweepResult = await sweepNotificationRetriesLogic({
+      db,
+      twilio: mockTwilio,
+      elevenLabs: { isConfigured: () => true, synthesizeSpeech: vi.fn() },
+      maxAttempts: 3
+    });
+
+    expect(sweepResult.retriedIds).toContain('notif-retry-eligible-1');
+    expect(sweepResult.skippedDemoCount).toBe(1);
+    expect(twilioSendSms).toHaveBeenCalledTimes(1);
+
+    const updatedEligible = await db.getNotification('notif-retry-eligible-1');
+    expect(updatedEligible?.status).toBe(NotificationStatus.SENT);
+    expect(updatedEligible?.provider_reference).toBe('SM_RETRY_DISPATCHED');
+
+    const updatedDemo = await db.getNotification('notif-retry-demo-skip');
+    expect(updatedDemo?.status).toBe(NotificationStatus.RETRY_SCHEDULED);
   });
 
   it('MISSING KEYS RETRY TEST: Skipped rows are marked status=failed and never retried by sweep', async () => {

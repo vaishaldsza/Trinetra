@@ -7,7 +7,7 @@ import {
   NotificationChannel,
   NotificationStatus,
   IncidentPriority
-} from '@trinetra/shared';
+} from '../contracts';
 import { DatabaseClient } from '../types';
 
 export interface ProcessIncidentDeps {
